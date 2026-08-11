@@ -1,0 +1,78 @@
+# ════════════════════════════════════════════════════════════════════════
+# Lyra — dependências do Python principal (system Python 3.12)
+# Atualizado 02/07/2026 (conferido via pip freeze real — vários pacotes do
+# arquivo anterior estavam desatualizados/incorretos, ver LYRA_TECNICO.md).
+#
+# venv_embed foi APOSENTADO em 01/07/2026: o embed_service.py (BGE-M3) agora
+# roda neste mesmo Python principal, que foi atualizado pra torch 2.6+cu124
+# (exigido pelo bge-m3 — só tem pesos .bin, sem safetensors).
+# requirements_embed.txt foi removido (obsoleto, venv_embed não existe mais).
+#
+# Instalar:  python -m pip install -r requirements.txt
+# ════════════════════════════════════════════════════════════════════════
+
+# ── Web / API (cerebro_maestro.py :8000, embed_service.py :8001) ────────
+fastapi==0.136.1
+uvicorn==0.46.0
+pydantic==2.12.5
+httpx==0.28.1                  # cliente async p/ SurrealDB + health checks
+websockets==16.0              # hub ws :8765 (lyra_app.py)
+python-dotenv==1.2.2          # carrega .env (GROQ_API_KEY, GEMINI_API_KEY)
+fastapi-mcp==0.4.0            # expõe endpoints REST como ferramentas MCP (Claude Code, Cursor, etc.)
+crawl4ai==0.9.0               # web crawler LLM-friendly (Markdown limpo, suporta JS/SPA)
+pywinauto==0.6.9              # controle de janelas e UI Windows (clicar, preencher, etc.)
+google-api-python-client==2.188.0  # Gmail + Google Calendar API
+google-auth-httplib2==0.4.0        # transport OAuth2
+google-auth-oauthlib==1.2.4        # fluxo OAuth2 desktop
+
+# ── Cascata de modelos ──────────────────────────────────────────────────
+ollama==0.6.1                 # qwen3:8b local (último andar)
+groq==1.0.0                   # Groq Llama 3.3 70B (1º andar) + enxame
+google-genai==1.65.0          # Gemini 2.5 Flash + Live API (2º andar, voz live)
+# Claude via CLI 'claude' (sem pacote pip — instalado separado)
+
+# ── RAG / memória ───────────────────────────────────────────────────────
+qdrant-client==1.17.1         # CONGELADO — não atualizar (perda de vetores)
+sentence-transformers==4.1.0  # BAAI/bge-m3 (1024d, embed_service.py) — 01/07: absorveu o que era venv_embed
+bm25s==0.3.9                  # busca lexical BM25 esparsa (bm25_index.py) — substituiu rank-bm25 em 26/06
+pyarrow==24.0.0               # IMPORTAR ANTES de torch (access violation)
+numpy==1.26.4
+torch==2.6.0+cu124             # --index-url https://download.pytorch.org/whl/cu124 (upgrade 01/07, era 2.5.1+cu121)
+torchvision==0.21.0+cu124
+torchaudio==2.6.0+cu124
+
+# ── Voz / áudio (audio_manager.py, mic_engine.py, lyra_voice_live.py) ───
+edge-tts==7.2.8               # TTS Francisca PT-BR neural (pipeline TTS pausado por decisão do usuário)
+playsound==1.2.2              # reprodução de mp3
+faster-whisper==1.2.1         # STT na GPU
+sounddevice==0.5.5            # captura de microfone
+silero-vad==6.2.1             # VAD (detecção de fala) — mic_engine.py
+
+# ── Ferramentas (lyra_tools.py) ─────────────────────────────────────────
+psutil==7.2.2                 # checar_saude_sistema, /metrics
+requests==2.33.0
+beautifulsoup4==4.14.3        # buscar_url, pesquisar_internet
+ddgs==9.14.2                  # pesquisar_internet (DuckDuckGo search)
+pypdf==6.10.2                 # ler_documento (PDF)
+python-docx==1.2.0            # gerar_documento / ler .docx
+openpyxl==3.1.5               # gerar_documento (xlsx)
+reportlab==4.4.9              # gerar_documento (pdf)
+deep-translator==1.11.4       # traduzir_texto
+mss==10.2.0                   # capturar_tela / explicar_tela
+opencv-python==4.13.0.92      # webcam.py
+easyocr==1.7.2                # OCR (leitura de texto em imagem/tela)
+GPUtil==1.4.0                 # telemetria de GPU (fallback quando nvidia-smi não disponível)
+pyperclip==1.11.0             # ler/escrever clipboard
+pillow==12.2.0                # processamento de imagem
+watchdog==6.0.0               # vigilância de pastas
+winotify==1.1.0               # notificações nativas do Windows
+keyring                        # opcional, NÃO instalado ainda — migração de API keys pro Windows Credential Manager (lyra_seguranca.py, feature não ativada)
+
+# ── Desktop ─────────────────────────────────────────────────────────────
+pywebview==6.2.1              # janela frameless (lyra_app.py)
+pywin32==311                  # APIs Win32 (ícone, minimizar, mídia)
+
+# ── Integrações externas ─────────────────────────────────────────────────────
+browser-use>=0.1.0            # browser Playwright controlado por IA (navegar_web) — instalado: 0.13.1
+langchain-google-genai>=2.0   # LLM adapter Gemini para browser-use — instalado: 4.2.6
+python-telegram-bot>=21.0     # bot Telegram bidirecional (lyra_telegram.py) — instalado: 22.8

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lyra · Grafo de Memória (PRÉVIA)</title>
+<!--
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  PRÉVIA / MOCKUP — NÃO está ligado ao backend.                         ║
+  ║  Dados são SINTÉTICOS (const DADOS_EXEMPLO abaixo), só pra mostrar     ║
+  ║  "como ficaria" o visualizador 3D do grafo de memória da Lyra.        ║
+  ║                                                                        ║
+  ║  Estrutura real (vem de GET /grafo + tabelas SurrealDB):              ║
+  ║    nó  topico  ── hub temático (keyword)                               ║
+  ║    nó  evento  ── uma fala/fato do histórico                          ║
+  ║    aresta  sobre     evento ─▶ topico   (indexação por tópico)        ║
+  ║    aresta  precedeu  evento ─▶ evento   (thread cronológico)          ║
+  ║                                                                        ║
+  ║  Pra virar real: trocar DADOS_EXEMPLO por um fetch a um endpoint       ║
+  ║  tipo /grafo/completo que devolva {nodes, links} no mesmo formato.    ║
+  ╚══════════════════════════════════════════════════════════════════════╝
+-->
+<script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
+<style>
+  :root {
+    --bg:        #05070d;
+    --bg2:       #0a0f1c;
+    --ciano:     #36e0ff;
+    --ciano-dim: #1c7e91;
+    --evento:    #7aa2ff;
+    --topico:    #ffb454;
+    --texto:     #cfe6ee;
+    --texto-dim: #6b8a96;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: radial-gradient(1200px 800px at 70% 20%, #0c1426 0%, var(--bg) 70%);
+    color: var(--texto);
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #graph { position: fixed; inset: 0; }
+
+  .painel {
+    position: fixed; z-index: 10;
+    background: rgba(10, 15, 28, 0.82);
+    border: 1px solid rgba(54, 224, 255, 0.18);
+    border-radius: 14px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+
+  /* Cabeçalho */
+  #cabecalho { top: 18px; left: 18px; padding: 16px 20px; max-width: 340px; }
+  #cabecalho h1 { font-size: 17px; font-weight: 600; letter-spacing: .3px; }
+  #cabecalho h1 .dot { color: var(--ciano); }
+  #cabecalho .tag {
+    display: inline-block; margin-top: 8px; font-size: 10.5px; letter-spacing: 1.4px;
+    text-transform: uppercase; color: #0a0f1c; background: var(--ciano);
+    padding: 2px 8px; border-radius: 6px; font-weight: 700;
+  }
+  #cabecalho p { margin-top: 10px; font-size: 12.5px; line-height: 1.5; color: var(--texto-dim); }
+
+  /* Busca */
+  #busca { top: 18px; left: 50%; transform: translateX(-50%); padding: 8px 10px; display: flex; gap: 8px; }
+  #busca input {
+    width: 320px; background: rgba(5,7,13,.7); border: 1px solid rgba(54,224,255,.25);
+    color: var(--texto); padding: 9px 13px; border-radius: 9px; font-size: 13.5px; outline: none;
+  }
+  #busca input:focus { border-color: var(--ciano); box-shadow: 0 0 0 3px rgba(54,224,255,.12); }
+  #busca input::placeholder { color: var(--texto-dim); }
+
+  /* Legenda */
+  #legenda { bottom: 18px; left: 18px; padding: 14px 18px; font-size: 12.5px; }
+  #legenda .item { display: flex; align-items: center; gap: 9px; margin: 7px 0; }
+  #legenda .bolinha { width: 12px; height: 12px; border-radius: 50%; }
+  #legenda .linha { width: 22px; height: 0; border-top: 2px solid; }
+  #legenda h3 { font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase;
+                color: var(--texto-dim); margin-bottom: 9px; }
+
+  /* Detalhe do nó */
+  #detalhe { bottom: 18px; right: 18px; padding: 16px 18px; max-width: 320px;
+             opacity: 0; transform: translateY(8px); transition: .25s; pointer-events: none; }
+  #detalhe.ativo { opacity: 1; transform: none; }
+  #detalhe .tipo { font-size: 10.5px; letter-spacing: 1.3px; text-transform: uppercase; }
+  #detalhe .titulo { font-size: 14.5px; margin: 6px 0 8px; font-weight: 600; line-height: 1.35; }
+  #detalhe .meta { font-size: 11.5px; color: var(--texto-dim); }
+  #detalhe .conexoes { margin-top: 10px; font-size: 12px; }
+
+  #stats { bottom: 18px; left: 50%; transform: translateX(-50%); padding: 8px 16px; font-size: 12px;
+           color: var(--texto-dim); display: flex; gap: 18px; }
+  #stats b { color: var(--ciano); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div id="graph"></div>
+
+  <div id="cabecalho" class="painel">
+    <h1>Lyra <span class="dot">·</span> Grafo de Memória</h1>
+    <span class="tag">Prévia — dados de exemplo</span>
+    <p>Cada <b style="color:var(--evento)">evento</b> (uma fala/fato do histórico) se liga aos
+       <b style="color:var(--topico)">tópicos</b> que menciona e ao evento que o
+       <b>precedeu</b>. É a memória da Lyra como uma teia navegável.</p>
+  </div>
+
+  <div id="busca" class="painel">
+    <input id="campoBusca" type="text" placeholder="🔍 filtrar por tópico ou texto…  (ex: frança, lyra)" />
+  </div>
+
+  <div id="legenda" class="painel">
+    <h3>Legenda</h3>
+    <div class="item"><span class="bolinha" style="background:var(--topico)"></span> Tópico (hub temático)</div>
+    <div class="item"><span class="bolinha" style="background:var(--evento)"></span> Evento (fala / fato)</div>
+    <div class="item"><span class="linha" style="border-color:var(--ciano-dim)"></span> <b>sobre</b> &nbsp;(evento → tópico)</div>
+    <div class="item"><span class="linha" style="border-color:var(--evento)"></span> <b>precedeu</b> &nbsp;(cronológico)</div>
+  </div>
+
+  <div id="detalhe" class="painel">
+    <div class="tipo"></div>
+    <div class="titulo"></div>
+    <div class="meta"></div>
+    <div class="conexoes"></div>
+  </div>
+
+  <div id="stats" class="painel">
+    <span><b id="nNos">0</b> nós</span>
+    <span><b id="nArestas">0</b> arestas</span>
+    <span><b id="nTopicos">0</b> tópicos</span>
+  </div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// DADOS DE EXEMPLO (sintéticos) — mesma forma que um /grafo/completo devolveria.
+// Estrutura: nodes[{id, tipo:'topico'|'evento', label, ator?, ts?}],
+//            links[{source, target, rel:'sobre'|'precedeu'}]
+// ─────────────────────────────────────────────────────────────────────────────
+const DADOS_EXEMPLO = (() => {
+  const topicos = ["frança", "paris", "revolução", "lyra", "memória", "bge-m3",
+                   "reranker", "café", "projeto", "qdrant"];
+  const eventos = [
+    { t: "Antônio perguntou qual a capital da França.",          ator: "usuario", tops: ["frança","paris"] },
+    { t: "Lyra respondeu: a capital da França é Paris.",         ator: "lyra",    tops: ["frança","paris"] },
+    { t: "Antônio quis saber quando foi a Revolução Francesa.",  ator: "usuario", tops: ["frança","revolução"] },
+    { t: "Lyra explicou: a Revolução Francesa começou em 1789.", ator: "lyra",    tops: ["frança","revolução"] },
+    { t: "Antônio pediu pra migrar a memória pro BGE-M3.",       ator: "usuario", tops: ["projeto","memória","bge-m3"] },
+    { t: "Lyra concluiu a migração pro lyra_memory_v2 (1024d).", ator: "lyra",    tops: ["memória","bge-m3","qdrant"] },
+    { t: "Antônio aprovou adicionar um reranker ao RAG.",        ator: "usuario", tops: ["projeto","reranker"] },
+    { t: "Lyra plugou o bge-reranker-v2-m3 como 3º estágio.",    ator: "lyra",    tops: ["reranker","bge-m3","memória"] },
+    { t: "Antônio comentou que ia fazer um café.",               ator: "usuario", tops: ["café"] },
+    { t: "Lyra registrou a preferência de café do Antônio.",     ator: "lyra",    tops: ["café","memória"] },
+    { t: "Antônio perguntou como anda o projeto Lyra.",          ator: "usuario", tops: ["projeto","lyra"] },
+    { t: "Lyra resumiu: stack local, RAG híbrido, sub-agentes.", ator: "lyra",    tops: ["projeto","lyra","qdrant"] },
+  ];
+
+  const nodes = [], links = [];
+  topicos.forEach(t => nodes.push({ id: "topico:" + t, tipo: "topico", label: t }));
+
+  const base = Date.now() - eventos.length * 3600_000;
+  eventos.forEach((e, i) => {
+    const id = "evento:" + i;
+    nodes.push({ id, tipo: "evento", label: e.t, ator: e.ator,
+                 ts: new Date(base + i * 3600_000).toISOString() });
+    e.tops.forEach(tp => links.push({ source: id, target: "topico:" + tp, rel: "sobre" }));
+    if (i > 0) links.push({ source: "evento:" + (i - 1), target: id, rel: "precedeu" });
+  });
+  return { nodes, links };
+})();
+
+// grau de cada nó → tamanho
+const grau = {};
+DADOS_EXEMPLO.links.forEach(l => {
+  grau[l.source] = (grau[l.source] || 0) + 1;
+  grau[l.target] = (grau[l.target] || 0) + 1;
+});
+
+const COR = { topico: "#ffb454", evento: "#7aa2ff" };
+const corLink = r => (r === "precedeu" ? "rgba(122,162,255,0.55)" : "rgba(28,126,145,0.45)");
+
+const elDetalhe = document.getElementById("detalhe");
+const adj = {};
+DADOS_EXEMPLO.links.forEach(l => {
+  (adj[l.source] = adj[l.source] || []).push(l.target);
+  (adj[l.target] = adj[l.target] || []).push(l.source);
+});
+
+let termoBusca = "";
+const bate = n =>
+  !termoBusca ||
+  n.label.toLowerCase().includes(termoBusca) ||
+  n.id.toLowerCase().includes(termoBusca);
+
+const Graph = ForceGraph3D()(document.getElementById("graph"))
+  .graphData(DADOS_EXEMPLO)
+  .backgroundColor("#05070d")
+  .nodeLabel(n => `<div style="font:12px Segoe UI;color:#cfe6ee;background:#0a0f1c;
+       border:1px solid #1c7e91;padding:6px 9px;border-radius:7px;max-width:260px">
+       <b style="color:${COR[n.tipo]}">${n.tipo === "topico" ? "#" + n.label : n.ator}</b><br>
+       ${n.tipo === "topico" ? "tópico" : n.label}</div>`)
+  .nodeColor(n => bate(n) ? COR[n.tipo] : "#26323f")
+  .nodeOpacity(0.95)
+  .nodeVal(n => n.tipo === "topico" ? 4 + (grau[n.id] || 0) * 1.6 : 2.2)
+  .nodeResolution(16)
+  .linkColor(l => corLink(l.rel))
+  .linkWidth(l => (l.rel === "precedeu" ? 1.4 : 0.6))
+  .linkDirectionalParticles(l => (l.rel === "precedeu" ? 2 : 0))
+  .linkDirectionalParticleWidth(1.6)
+  .linkDirectionalParticleSpeed(0.006)
+  .onNodeClick(n => {
+    Graph.centerAt && Graph.cameraPosition(
+      { x: n.x * 1.4, y: n.y * 1.4, z: n.z * 1.4 }, n, 800);
+    mostrarDetalhe(n);
+  })
+  .onBackgroundClick(() => elDetalhe.classList.remove("ativo"));
+
+// halo/glow nos tópicos via brilho
+Graph.nodeThreeObjectExtend(true);
+
+function mostrarDetalhe(n) {
+  const viz = (adj[n.id] || []).length;
+  elDetalhe.querySelector(".tipo").textContent = n.tipo === "topico" ? "TÓPICO" : "EVENTO · " + n.ator;
+  elDetalhe.querySelector(".tipo").style.color = COR[n.tipo];
+  elDetalhe.querySelector(".titulo").textContent = n.tipo === "topico" ? "#" + n.label : n.label;
+  elDetalhe.querySelector(".meta").textContent =
+    n.tipo === "evento" && n.ts ? new Date(n.ts).toLocaleString("pt-BR") : "hub temático";
+  elDetalhe.querySelector(".conexoes").innerHTML =
+    `<b style="color:var(--ciano)">${viz}</b> conexão(ões) no grafo`;
+  elDetalhe.classList.add("ativo");
+}
+
+// busca / realce
+document.getElementById("campoBusca").addEventListener("input", e => {
+  termoBusca = e.target.value.trim().toLowerCase();
+  Graph.nodeColor(Graph.nodeColor());   // força re-render das cores
+});
+
+// stats
+document.getElementById("nNos").textContent = DADOS_EXEMPLO.nodes.length;
+document.getElementById("nArestas").textContent = DADOS_EXEMPLO.links.length;
+document.getElementById("nTopicos").textContent =
+  DADOS_EXEMPLO.nodes.filter(n => n.tipo === "topico").length;
+
+// leve rotação automática de câmera no início
+let ang = 0;
+const dist = 320;
+Graph.cameraPosition({ z: dist });
+const giro = setInterval(() => {
+  ang += Math.PI / 600;
+  Graph.cameraPosition({ x: dist * Math.sin(ang), z: dist * Math.cos(ang) });
+  if (ang > Math.PI / 3) clearInterval(giro);   // para após girar um pouco
+}, 30);
+</script>
+</body>
+</html>

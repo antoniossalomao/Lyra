@@ -1,0 +1,26 @@
+{
+  "total_chats": 78,
+  "tiers": {
+    "Groq": {
+      "usos": 70,
+      "falhas": 1,
+      "latencia_total_ms": 468421
+    },
+    "Gemini": {
+      "usos": 4,
+      "falhas": 0,
+      "latencia_total_ms": 54406
+    },
+    "Local": {
+      "usos": 2,
+      "falhas": 0,
+      "latencia_total_ms": 75344
+    },
+    "Claude": {
+      "usos": 2,
+      "falhas": 0,
+      "latencia_total_ms": 20969
+    }
+  },
+  "iniciado_em": "2026-06-26T02:11:44.018343"
+}

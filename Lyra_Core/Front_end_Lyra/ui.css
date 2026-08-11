@@ -1,0 +1,469 @@
+/* ============================================================
+   LYRA AI — ui.css | Shell de navegação (sidebar + views)
+   Carregado DEPOIS do style.css — sobrescreve o layout do chat
+   (modal → view central) e adiciona sidebar/views. A estética
+   (glass, neon ciano, Inter, sentence case) é a mesma do style.css.
+   ============================================================ */
+
+:root {
+    --sb-w:  248px;   /* sidebar expandida */
+    --sb-wc: 58px;    /* sidebar recolhida (rail de ícones) */
+}
+body               { --sb-cur: var(--sb-w); }
+body.sb-collapsed  { --sb-cur: var(--sb-wc); }
+
+/* ── Sidebar ─────────────────────────────────────────────────── */
+#sidebar {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    width: var(--sb-cur);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 10px 12px;
+    background: rgba(0, 4, 8, 0.55);
+    border-right: 1px solid var(--border);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    z-index: 60;
+    transition: width 0.32s var(--ease-out);
+    overflow: hidden;
+}
+
+/* Texto que some quando a sidebar vira rail */
+.sb-txt { white-space: nowrap; transition: opacity 0.18s var(--ease); }
+body.sb-collapsed .sb-txt { opacity: 0; pointer-events: none; }
+
+#sb-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 4px 12px;
+    flex-shrink: 0;
+}
+#sb-head #brand { position: static; }
+
+#sb-new {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 10px;
+    padding: 9px 12px;
+    background: rgba(0,221,255,0.06);
+    border: 1px solid rgba(0,221,255,0.18);
+    border-radius: 10px;
+    color: rgba(255,255,255,0.85);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 300;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: background 0.2s var(--ease), border-color 0.2s var(--ease), transform 0.15s var(--ease);
+    flex-shrink: 0;
+}
+#sb-new svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--neon); }
+#sb-new:hover  { background: rgba(0,221,255,0.11); border-color: rgba(0,221,255,0.35); }
+#sb-new:active { transform: scale(0.97); }
+
+#sb-nav { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+
+.sb-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 8px 11px;
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    color: rgba(255,255,255,0.55);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.18s var(--ease), color 0.18s var(--ease);
+}
+.sb-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+.sb-item:hover  { background: rgba(255,255,255,0.045); color: rgba(255,255,255,0.85); }
+.sb-item.active {
+    background: rgba(0,221,255,0.08);
+    color: var(--neon);
+}
+
+/* Badge de "não lida" no item "chat" — bolinha discreta, some quando lido */
+#chat-toggle-badge {
+    position: absolute;
+    top: 7px; left: 21px;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #00FF99;
+    box-shadow: 0 0 5px #00FF99;
+    opacity: 0;
+    transform: scale(0.4);
+    transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
+    pointer-events: none;
+}
+#chat-toggle-badge.show { opacity: 1; transform: scale(1); }
+body.sb-collapsed #chat-toggle-badge { left: 26px; }
+
+/* ── Lista de conversas (sessões) ────────────────────────────── */
+#sb-convs {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 10px;
+}
+#sb-convs .sb-label {
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(0,221,255,0.45);
+    padding: 0 6px 6px;
+}
+#sb-convs-list {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+#sb-convs-list::-webkit-scrollbar { display: none; }
+body.sb-collapsed #sb-convs { opacity: 0; pointer-events: none; }
+
+.sb-conv {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    font-family: inherit;
+    font-size: 11.5px;
+    font-weight: 300;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.18s var(--ease), color 0.18s var(--ease);
+    overflow: hidden;
+}
+.sb-conv span.sb-conv-title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sb-conv span.sb-conv-when {
+    font-size: 9px;
+    color: rgba(255,255,255,0.22);
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+}
+.sb-conv:hover  { background: rgba(255,255,255,0.045); color: rgba(255,255,255,0.8); }
+.sb-conv.active { background: rgba(0,221,255,0.07); color: rgba(255,255,255,0.85); }
+.sb-conv.active span.sb-conv-when { color: rgba(0,221,255,0.5); }
+
+.sb-convs-hint {
+    padding: 8px 6px;
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.22);
+    letter-spacing: 0.04em;
+}
+
+/* ── Rodapé da sidebar: status compacto + modelo ─────────────── */
+#sb-footer {
+    flex-shrink: 0;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    padding-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.sb-status-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 5px;
+    font-size: 10.5px;
+    color: rgba(255,255,255,0.45);
+}
+.sb-status-row .panel-metric { margin-left: auto; }
+body.sb-collapsed #sb-footer .panel-select { opacity: 0; pointer-events: none; }
+body.sb-collapsed .sb-status-row { flex-direction: column; gap: 6px; }
+body.sb-collapsed .sb-status-row .sb-txt { display: none; }
+
+/* ── Utilitário: some visualmente, continua acessível/funcional ── */
+.sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip: rect(0,0,0,0);
+    white-space: nowrap;
+}
+
+/* ── Dropdown customizado (substitui o <select> nativo do Windows,
+     que quebra o tema escuro com o menu cinza do sistema) ───────── */
+.sb-select { position: relative; }
+.sb-select-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 7px 10px;
+    background: rgba(0,10,16,0.55);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: rgba(255,255,255,0.65);
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 300;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color 0.18s var(--ease), color 0.18s var(--ease);
+}
+.sb-select-btn:hover  { border-color: rgba(0,221,255,0.3); color: rgba(255,255,255,0.85); }
+.sb-select-caret {
+    width: 11px; height: 11px;
+    flex-shrink: 0;
+    color: rgba(0,221,255,0.55);
+    transition: transform 0.2s var(--ease-out);
+}
+.sb-select.open .sb-select-caret { transform: rotate(180deg); }
+body.sb-collapsed .sb-select-btn span { display: none; }
+
+.sb-select-list {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: calc(100% + 6px);
+    background: rgba(4, 10, 14, 0.88);
+    border: 1px solid rgba(0,221,255,0.16);
+    border-radius: 10px;
+    padding: 4px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px) scale(0.98);
+    transform-origin: bottom center;
+    transition: opacity 0.16s var(--ease), transform 0.16s var(--ease-out);
+    z-index: 65;
+}
+.sb-select.open .sb-select-list { opacity: 1; pointer-events: auto; transform: none; }
+
+.sb-select-opt {
+    display: block;
+    width: 100%;
+    padding: 7px 10px;
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    color: rgba(255,255,255,0.6);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 300;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.sb-select-opt:hover    { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); }
+.sb-select-opt.selected { color: var(--neon); background: rgba(0,221,255,0.08); }
+
+/* Recolhida: o dropdown fica só com o ícone/caret (rail de ícones) */
+body.sb-collapsed .sb-select-list { left: auto; right: -160px; bottom: 0; width: 168px; }
+
+/* ── Views (overlays à direita da sidebar) ───────────────────── */
+.view-overlay {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    left: var(--sb-cur);
+    z-index: 40;
+    overflow-y: auto;
+    scrollbar-width: none;
+    padding: 58px 34px 30px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity 0.28s var(--ease), transform 0.28s var(--ease-out), left 0.32s var(--ease-out);
+}
+.view-overlay::-webkit-scrollbar { display: none; }
+.view-overlay.open { opacity: 1; pointer-events: auto; transform: none; }
+
+.view-inner { max-width: 880px; margin: 0 auto; }
+.view-title {
+    font-size: 17px;
+    font-weight: 200;
+    letter-spacing: 0.14em;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 22px;
+}
+.view-title span { color: var(--neon); }
+
+/* Grid de cards glass (config + integrações) */
+.cfg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+}
+.cfg-card {
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    padding: 16px 16px 14px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transition: border-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.cfg-card:hover { border-color: rgba(0,221,255,0.16); }
+
+/* Toggle switch (sentence case, neon quando ativo) */
+.cfg-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    font-size: 12px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+}
+.cfg-toggle input { display: none; }
+.cfg-switch {
+    position: relative;
+    width: 32px; height: 18px;
+    border-radius: 9px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.12);
+    flex-shrink: 0;
+    transition: background 0.22s var(--ease), border-color 0.22s var(--ease);
+}
+.cfg-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.55);
+    transition: transform 0.22s var(--ease-out), background 0.22s var(--ease);
+}
+.cfg-toggle input:checked + .cfg-switch {
+    background: rgba(0,221,255,0.18);
+    border-color: rgba(0,221,255,0.4);
+}
+.cfg-toggle input:checked + .cfg-switch::after {
+    transform: translateX(14px);
+    background: var(--neon);
+    box-shadow: 0 0 6px rgba(0,221,255,0.6);
+}
+
+/* ── Cards de integrações ────────────────────────────────────── */
+.integr-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.integr-head { display: flex; align-items: center; gap: 9px; }
+.integr-head .p-dot { flex-shrink: 0; }
+.integr-nome { font-size: 13px; font-weight: 300; color: rgba(255,255,255,0.85); }
+.integr-desc { font-size: 11px; color: rgba(255,255,255,0.38); line-height: 1.5; }
+.integr-status {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: rgba(0,221,255,0.55);
+    margin-top: 2px;
+}
+
+/* ── Chat: de modal flutuante → view central (estilo app Claude) ── */
+#chat-scrim { display: none !important; }
+
+#chat-terminal {
+    position: fixed;
+    top: 44px;
+    bottom: 16px;
+    left: var(--sb-cur);
+    right: 0;
+    margin: 0 auto;
+    width: min(820px, calc(100vw - var(--sb-cur) - 44px));
+    height: auto;
+    max-height: none;
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    background: rgba(0, 3, 6, 0.42);
+    border: 1px solid var(--border);
+    border-radius: 15px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: var(--shadow);
+    z-index: 42;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px) scale(0.995);
+    transition: opacity 0.3s var(--ease), transform 0.34s var(--ease-out),
+                left 0.32s var(--ease-out), width 0.32s var(--ease-out);
+}
+#chat-terminal.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+}
+
+/* ── Home: convite pra conversar (estilo "new chat" do Claude) ── */
+#home-cta {
+    position: fixed;
+    left: var(--sb-cur);
+    right: 0;
+    bottom: 96px;
+    margin: 0 auto;
+    width: min(520px, calc(100vw - var(--sb-cur) - 80px));
+    padding: 13px 22px;
+    background: rgba(0, 3, 6, 0.5);
+    border: 1px solid var(--border);
+    border-radius: 26px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    color: rgba(255,255,255,0.28);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 200;
+    letter-spacing: 0.09em;
+    text-align: left;
+    cursor: text;
+    z-index: 30;
+    transition: border-color 0.25s var(--ease), color 0.25s var(--ease),
+                opacity 0.3s var(--ease), left 0.32s var(--ease-out);
+}
+#home-cta:hover { border-color: rgba(0,221,255,0.28); color: rgba(255,255,255,0.5); }
+body:not([data-view="home"]) #home-cta { opacity: 0; pointer-events: none; }
+
+/* Estado central some quando alguma view cobre a esfera */
+body:not([data-view="home"]) #state-row { opacity: 0; pointer-events: none; }
+#state-row { transition: opacity 0.3s var(--ease); }
+
+/* Sidebar, views e chat sobem até o topo da janela — sem no-drag,
+   a barra invisível de arrastar (#drag-region, 52px) roubaria os
+   cliques nos botões dessa faixa. */
+#sidebar, .view-overlay, #chat-terminal, #home-cta {
+    -webkit-app-region: no-drag;
+}
+
+/* ── Ajustes de camadas globais ─────────────────────────────── */
+#window-controls { z-index: 80; }
+#mic-btn, #voice-live-btn { z-index: 70; }
+#toast { z-index: 90; }
+
+/* A esfera continua centrada na janela toda — a sidebar é vidro
+   por cima, não empurra o núcleo. */
+
+@media (prefers-reduced-motion: reduce) {
+    #sidebar, .view-overlay, #chat-terminal, #home-cta { transition-duration: 0.01s; }
+}

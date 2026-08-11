@@ -1,0 +1,35 @@
+# repos de referência, não são código nosso
+TESTE/
+
+# deps
+node_modules/
+venv*/
+__pycache__/
+*.pyc
+
+# dados/binários grandes
+qdrant_data/
+bm25s_index*/
+*.pkl
+*.bak
+snapshots/
+Lyra_Core/Memoria_Lyra/db_cortex/
+Lyra_Core/Memoria_Lyra/backups/
+
+# repo git aninhado (Theia clonado) — tem .git próprio, entraria como
+# submodule sem querer; fica de fora até decidirmos como versionar isso
+Lyra_Core/Lyra_IDE/
+
+# logs e segredos
+*.log
+*.err
+.env
+!.env.example
+
+# credenciais OAuth do Google (geradas em runtime)
+Lyra_Core/google_auth/credentials.json
+Lyra_Core/google_auth/token.json
+
+# ide/build
+dist/
+build/

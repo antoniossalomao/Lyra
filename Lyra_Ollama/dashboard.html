@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lyra — Dashboard</title>
+<style>
+  :root { --neon:#00d2ff; --ok:#00ff99; --bad:#ff3355; --warn:#ffaa33; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #06080d; color: #c8d2dc;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: 28px; min-height: 100vh;
+  }
+  h1 { font-weight: 200; letter-spacing: .18em; font-size: 1.5rem; margin-bottom: 4px; }
+  h1 span { color: var(--neon); }
+  .sub { color: #5a6573; font-size: .72rem; letter-spacing: .1em; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+  .card {
+    background: rgba(255,255,255,0.018); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 18px 20px;
+  }
+  .card h2 {
+    font-size: .60rem; font-weight: 500; letter-spacing: .28em; text-transform: uppercase;
+    color: #5a6573; margin-bottom: 14px;
+  }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; font-size: .82rem; }
+  .row .k { color: #8995a3; }
+  .row .v { color: #e4eaf0; font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+  .bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden; margin-top: 3px; }
+  .bar > span { display: block; height: 100%; background: var(--neon); border-radius: 3px; transition: width .4s; }
+  .tier-row { padding: 7px 0; }
+  .tier-row .top { display: flex; justify-content: space-between; font-size: .8rem; }
+  .big { font-size: 1.8rem; font-weight: 200; color: #fff; }
+  .muted { color: #5a6573; font-size: .68rem; }
+  .updated { color: #4a5562; font-size: .66rem; margin-top: 20px; letter-spacing: .08em; }
+  .err { color: var(--bad); }
+</style>
+</head>
+<body>
+  <h1>Lyra <span>·</span> Dashboard</h1>
+  <div class="sub" id="sub">monitoramento ao vivo — atualiza a cada 5s</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Serviços</h2>
+      <div id="svc"></div>
+    </div>
+    <div class="card">
+      <h2>Recursos</h2>
+      <div id="res"></div>
+    </div>
+    <div class="card">
+      <h2>Memória vetorial</h2>
+      <div id="vec"></div>
+    </div>
+    <div class="card">
+      <h2>Telemetria da cascata</h2>
+      <div class="big" id="total-chats">—</div>
+      <div class="muted">chats totais</div>
+      <div id="tiers" style="margin-top:12px"></div>
+    </div>
+    <div class="card" style="grid-column: 1 / -1">
+      <h2>Base de conhecimento — composição</h2>
+      <div id="cats"></div>
+    </div>
+  </div>
+
+  <div class="updated" id="updated"></div>
+
+<script>
+const BASE = location.origin;  // mesmo host que serve esta página
+
+function dot(ok) {
+  const c = ok ? 'var(--ok)' : 'var(--bad)';
+  return `<span class="dot" style="background:${c};box-shadow:0 0 6px ${c}"></span>`;
+}
+function row(k, v) { return `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`; }
+function bar(pct) {
+  const c = pct > 85 ? 'var(--bad)' : pct > 60 ? 'var(--warn)' : 'var(--neon)';
+  return `<div class="bar"><span style="width:${pct}%;background:${c}"></span></div>`;
+}
+
+async function tick() {
+  try {
+    const [h, s, m] = await Promise.all([
+      fetch(BASE + '/health').then(r => r.json()),
+      fetch(BASE + '/stats').then(r => r.json()),
+      fetch(BASE + '/metrics').then(r => r.json()),
+    ]);
+
+    // Serviços
+    document.getElementById('svc').innerHTML =
+      row(`${dot(h.cerebro?.ok)}cerebro`, h.cerebro?.ok ? 'ativo' : 'off') +
+      row(`${dot(h.qdrant?.ok)}qdrant`, (h.qdrant?.latencia_ms ?? '—') + ' ms') +
+      row(`${dot(h.surreal?.ok)}surreal`, (h.surreal?.latencia_ms ?? '—') + ' ms') +
+      row(`${dot(h.ollama?.ok)}ollama`, (h.ollama?.latencia_ms ?? '—') + ' ms');
+
+    // Recursos
+    const vramPct = m.vram_pct ?? (h.vram?.total_mb ? Math.round(h.vram.usada_mb/h.vram.total_mb*100) : null);
+    document.getElementById('res').innerHTML =
+      row('CPU', (m.cpu_pct ?? '—') + '%') + bar(m.cpu_pct || 0) +
+      row('RAM', (m.ram_pct ?? '—') + '%') + bar(m.ram_pct || 0) +
+      row('GPU', (m.gpu_pct ?? '—') + '%') + bar(m.gpu_pct || 0) +
+      row('VRAM', (vramPct ?? '—') + '% ' + (h.vram?.usada_mb ? `(${h.vram.usada_mb}MB)` : '')) + bar(vramPct || 0) +
+      row('últ. chat', (m.latencia_ms ?? '—') + ' ms');
+
+    // Vetores
+    const v = h.qdrant?.vetores || {};
+    document.getElementById('vec').innerHTML =
+      row('lyra_memory (384d)', (v.lyra_memory ?? '—').toLocaleString('pt-BR')) +
+      row('lyra_memory_v2 (1024d)', (v.lyra_memory_v2 ?? '—').toLocaleString('pt-BR'));
+
+    // Telemetria
+    document.getElementById('total-chats').textContent = s.total_chats ?? 0;
+    const ordem = ['Groq','Gemini','Claude','Local'];
+    document.getElementById('tiers').innerHTML = ordem
+      .filter(n => s.tiers?.[n])
+      .map(n => {
+        const t = s.tiers[n];
+        const pct = s.distribuicao_pct?.[n] ?? 0;
+        const lat = t.latencia_media_ms != null ? t.latencia_media_ms + 'ms' : '—';
+        return `<div class="tier-row">
+          <div class="top"><span>${n}</span><span>${pct}% · ${lat}</span></div>
+          ${bar(pct)}
+          <div class="muted">${t.usos} usos · ${t.falhas} falhas · ${t.taxa_sucesso ?? '—'}% sucesso</div>
+        </div>`;
+      }).join('') || '<div class="muted">sem dados ainda</div>';
+
+    document.getElementById('updated').textContent = 'atualizado ' + new Date().toLocaleTimeString('pt-BR');
+    document.getElementById('sub').classList.remove('err');
+  } catch (e) {
+    document.getElementById('sub').textContent = 'cérebro offline — tentando reconectar…';
+    document.getElementById('sub').classList.add('err');
+  }
+}
+
+// Composição da base — carrega uma vez (facet é mais pesado, categorias mudam devagar)
+async function carregarCategorias() {
+  try {
+    const c = await fetch(BASE + '/memoria/categorias').then(r => r.json());
+    const cats = c.por_categoria || {};
+    const total = c.total_colecao || 1;
+    const ordenadas = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+    document.getElementById('cats').innerHTML = ordenadas.map(([nome, n]) => {
+      const pct = Math.round(n / total * 1000) / 10;
+      return `<div class="tier-row">
+        <div class="top"><span>${nome}</span><span>${n.toLocaleString('pt-BR')} · ${pct}%</span></div>
+        ${bar(pct)}
+      </div>`;
+    }).join('') || '<div class="muted">sem dados</div>';
+  } catch (e) {
+    document.getElementById('cats').innerHTML = '<div class="muted err">indisponível</div>';
+  }
+}
+
+tick();
+setInterval(tick, 5000);
+carregarCategorias();
+setInterval(carregarCategorias, 60000);  // recarrega a cada 1min
+</script>
+</body>
+</html>
