@@ -1,12 +1,17 @@
 # Lyra
 
-IA pessoal local — identidade feminina, técnica, não-servil. Roda no PC do Antônio
-(Ryzen 7 3700X · RTX 2060 Super 8GB · 64GB RAM), sem Docker, no Windows.
+IA pessoal local — identidade feminina, técnica, não-servil. Roda no PC do
+Antônio (Ryzen 7 3700X · RTX 2060 Super 8GB · 64GB RAM), sem Docker, no
+Windows.
+
+> **Licença:** projeto proprietário, todos os direitos reservados — ver
+> [LICENSE](LICENSE). Público como portfólio, não como software livre.
 
 > Documentação viva em `Memorias Do Projeto/`:
 > [LYRA_NUCLEO](Memorias%20Do%20Projeto/LYRA_NUCLEO.md) ·
 > [LYRA_TECNICO](Memorias%20Do%20Projeto/LYRA_TECNICO.md) ·
-> [LYRA_AGENTES_E_PLANOS](Memorias%20Do%20Projeto/LYRA_AGENTES_E_PLANOS.md)
+> [LYRA_AGENTES_E_PLANOS](Memorias%20Do%20Projeto/LYRA_AGENTES_E_PLANOS.md) ·
+> [LYRA_IDE_PLANO](Memorias%20Do%20Projeto/LYRA_IDE_PLANO.md)
 
 ---
 
@@ -42,9 +47,19 @@ IA pessoal local — identidade feminina, técnica, não-servil. Roda no PC do A
 | SurrealDB | 8090 | Memória episódica + grafo (ns `lyra_core`, db `Db_CORTEX`) |
 | Ollama | 11434 | qwen3:8b local (último andar da cascata) |
 
-> **Importante (Windows):** todas as chamadas internas entre serviços usam `127.0.0.1`, nunca `localhost` — o resolver IPv6 do `localhost` adiciona ~2s por chamada.
+> **Importante (Windows):** todas as chamadas internas entre serviços usam
+> `127.0.0.1`, nunca `localhost` — o resolver IPv6 do `localhost` adiciona
+> ~2s por chamada.
 
 ---
+
+## Requisitos
+
+- Windows 10/11, Python 3.12
+- GPU NVIDIA com CUDA 12.4 (BGE-M3 + reranker rodam na GPU)
+- Ollama instalado (`qwen3:8b` puxado localmente)
+- CLI `claude` no PATH (cascata usa Claude via CLI, sem key extra)
+- Chaves `GROQ_API_KEY` e `GEMINI_API_KEY` (cascata de chat)
 
 ## Como subir
 
@@ -58,7 +73,8 @@ bin\startup\start_embed.bat     :: embed_service BGE-M3 + reranker :8001
 bin\startup\start_cerebro.bat   :: espera 6333/8090/11434/8001 e sobe o FastAPI
 ```
 
-No boot do Windows, `bin/startup/lyra_boot.vbs` (atalho em Startup) sobe qdrant + surreal + embed + cerebro; o Ollama tem atalho próprio.
+No boot do Windows, `bin/startup/lyra_boot.vbs` (atalho em Startup) sobe
+qdrant + surreal + embed + cerebro; o Ollama tem atalho próprio.
 
 Frontend desktop:
 
@@ -69,16 +85,16 @@ python Lyra_Core/Front_end_Lyra/lyra_app.py
 ## Dependências
 
 ```
-python -m pip install -r requirements.txt            # Python principal (3.12) — inclui torch 2.6+cu124 (bge-m3)
+python -m pip install -r requirements.txt   # Python principal (3.12) — inclui torch 2.6+cu124 (bge-m3)
 ```
 
-> `venv_embed` foi aposentado em 01/07/2026 — o `embed_service.py` (BGE-M3) roda no mesmo Python principal agora, não mais num venv isolado.
+> `venv_embed` foi aposentado em 01/07/2026 — o `embed_service.py` (BGE-M3)
+> roda no mesmo Python principal agora, não mais num venv isolado.
 
 `.env` na raiz do `Lyra_Ollama/` — copie de `.env.example` e preencha:
 - `GROQ_API_KEY`, `GEMINI_API_KEY` — obrigatórias pra cascata de chat.
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS` — opcionais, só pro bot Telegram (`lyra_telegram.py`).
-
-Claude usa o CLI `claude` no PATH (sem key extra).
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS` — opcionais, só pro bot
+  Telegram (`lyra_telegram.py`).
 
 ## Testes
 
@@ -92,7 +108,8 @@ python Lyra_Ollama/validador_cortical.py    # Hit Rate / MRR do RAG (baseline em
 
 Com o cérebro no ar, abra no navegador: **http://localhost:8000/dashboard**
 Mostra ao vivo: serviços (latência), CPU/RAM/GPU/VRAM, contagem de vetores e
-telemetria da cascata (qual modelo respondeu mais, latência, taxa de sucesso).
+telemetria da cascata (qual modelo respondeu mais, latência, taxa de
+sucesso).
 
 ---
 
@@ -116,8 +133,10 @@ Lyra_Ollama/               # backend — orquestrador, RAG, agentes, integraçõ
   validador_cortical.py        # Hit Rate / MRR do RAG (baseline)
   calibrar_pesos_rag.py        # calibração de pesos do RRF
   test_smoke.py                # suite de smoke test (todos os endpoints)
+  routers/ · models/ · utils/  # FastAPI modularizado (routers por domínio, schemas Pydantic, helpers)
 Lyra_Core/                 # frontend, voz, sentidos, memória bruta
-  Front_end_Lyra/             # pywebview + Three.js (index.html, script.js, style.css, lyra_app.py)
+  Front_end_Lyra/             # pywebview + Three.js (index.html, script.js, style.css, lyra_app.py) — produção
+  Front_end_Lyra_v3/          # SvelteKit + Tauri, próxima geração do frontend (em desenvolvimento)
   audio_manager.py            # TTS (edge-tts Francisca) — pipeline pausado por decisão do usuário
   mic_engine.py               # STT (faster-whisper + Silero VAD)
   webcam.py                   # visão via webcam
@@ -129,8 +148,8 @@ Lyra_Core/                 # frontend, voz, sentidos, memória bruta
     Scripts_Ingestao/           # ingestão + vetorização dos datasets (pipeline_noturno.sh)
     backups/                    # snapshots de segurança pré-migração
     Documentos/                  # documentação gerada (PDFs)
-bin/                        # binários (qdrant.exe) + startup/*.bat + logs de boot
-Memorias Do Projeto/        # documentação canônica do projeto (NUCLEO/TECNICO/AGENTES_E_PLANOS)
+bin/                        # binários locais + startup/*.bat + logs de boot
+Memorias Do Projeto/        # documentação canônica do projeto (NUCLEO/TECNICO/AGENTES_E_PLANOS/IDE)
 ```
 
 ---
@@ -139,6 +158,17 @@ Memorias Do Projeto/        # documentação canônica do projeto (NUCLEO/TECNIC
 
 1. Antônio é o Administrador Supremo.
 2. Auto-modificação de código exige aprovação explícita.
-3. Offline por padrão — exceção consciente: cascata cloud (Groq/Gemini/Claude) para chat, aprovada em 25/06/2026.
+3. Offline por padrão — exceção consciente: cascata cloud
+   (Groq/Gemini/Claude) para chat, aprovada em 25/06/2026.
 
 Detalhes em [LYRA_NUCLEO](Memorias%20Do%20Projeto/LYRA_NUCLEO.md).
+
+---
+
+## Licença
+
+Proprietário — todos os direitos reservados. Ver [LICENSE](LICENSE). Uso,
+cópia ou redistribuição exigem autorização prévia por escrito.
+
+Segurança: ver [SECURITY.md](SECURITY.md). Contribuição: ver
+[CONTRIBUTING.md](CONTRIBUTING.md).
