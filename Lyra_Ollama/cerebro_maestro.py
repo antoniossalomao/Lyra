@@ -93,8 +93,7 @@ import bm25_index
 
 log("[3] Importando FastAPI + uvicorn + ollama...")
 import uvicorn
-from fastapi import FastAPI, UploadFile, File, WebSocket
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -129,6 +128,15 @@ _PASTA_UI = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "Lyra_Core", "Front_end_Lyra_v2", "dist")
 if os.path.isdir(_PASTA_UI):
     app.mount("/ui", StaticFiles(directory=_PASTA_UI, html=True), name="ui")
+
+# Frontend novo (SvelteKit, Lyra 2.0) — servido em paralelo ao /ui atual, sem
+# substituir nada. Same-origin (porta 8000) pra cookie de auth funcionar sem
+# mexer no CORS. Cutover pro /ui de verdade é decisão separada, só depois de
+# paridade de feature confirmada em uso real (ver PROGRESSAO_LYRAV2.md).
+_PASTA_UI_NOVO = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "Lyra_Core", "Front_end_Lyra_v3", "build")
+if os.path.isdir(_PASTA_UI_NOVO):
+    app.mount("/ui-novo", StaticFiles(directory=_PASTA_UI_NOVO, html=True), name="ui_novo")
 
 # Recebe uploads do frontend (colar/anexar imagem ou áudio direto no chat).
 _PASTA_UPLOADS = os.path.join(
@@ -654,837 +662,144 @@ def _rotear_especialista(msg_lower: str, msg_texto: str) -> dict:
     return next(e for e in ESPECIALISTAS if e["trigger"] is None)
 
 
-@app.post("/chat")
-async def chat_endpoint(msg: MensagemUsuario):
-    _t0_req = time.monotonic()
-
-    # Espera o startup terminar de restaurar sessão/briefing — sem isso, um
-    # /chat nos primeiros segundos corria com sessão None e histórico vazio.
-    await _session.wait_ready()
-
-    _, tamanho_hist = await _session.append_user(msg.texto)
-
-    # Registra a fala do usuário com classificação de intenção (Innovation 1)
-    asyncio.create_task(registrar_evento(fonte="chat", ator="Antônio", texto=msg.texto,
-                                         intencao=_classificar_intencao("Antônio", msg.texto)))
-
-    if tamanho_hist > cfg.MAX_HISTORY_MSGS:
-        asyncio.create_task(_session.compress_if_needed())
-
-    contexto_str = ""
-    # Sem acento — matching de keyword não pode depender do usuário digitar
-    # certinho ("saude" vs "saúde"), já causou a Lyra inventar CPU/RAM em vez
-    # de chamar a ferramenta porque "saude" sem acento não casava com "saúde".
-    msg_lower = _sem_acento(msg.texto.lower())
-
-    # Detecta se é pergunta sobre memória/histórico pessoal (controla top_k maior)
-    keywords_memoria = [_sem_acento(k) for k in ["lembra", "quando", "qual foi", "primeira pergunta",
-                        "quantas vezes", "me perguntei", "você já", "há quanto tempo",
-                        "ontem", "semana passada"]]
-    eh_pergunta_memoria = any(kw in msg_lower for kw in keywords_memoria)
-
-    # Detecta pergunta factual genérica (não só memória pessoal) — a base wiki_
-    # conhecimento foi ingerida exatamente pra isso: a Lyra deve CONSULTAR a
-    # memória em vez de confiar só no conhecimento interno do modelo pequeno
-    # (que erra/recusa fatos triviais) ou inventar. Só pula RAG em conversa
-    # puramente casual (sem "?" nem palavra interrogativa) — mas saudações tipo
-    # "tudo bem?"/"como vai?" têm "?" sem ser pergunta de conhecimento, então
-    # essas ficam de fora mesmo com "?" pra não pagar o custo do RAG à toa.
-    saudacoes_casuais = [_sem_acento(s) for s in ["tudo bem", "como vai", "como você está",
-                         "e aí", "oi,", "olá,", "bom dia", "boa tarde",
-                         "boa noite", "tudo certo", "tudo joia", "suave"]]
-    eh_saudacao_casual = any(s in msg_lower for s in saudacoes_casuais) and len(msg.texto) < 40
-    palavras_interrogativas = [_sem_acento(p) for p in ["qual", "quem", "quando", "onde", "como",
-                               "por que", "porque", "quanto", "quantos", "quantas", "o que",
-                               "que é", "quais"]]
-    eh_pergunta_factual = (not eh_saudacao_casual) and (
-        "?" in msg.texto or any(p in msg_lower for p in palavras_interrogativas))
-
-    # A busca híbrida (BM25 + vetorial sobre ~2,2M registros) custa 5-10s sozinha
-    # — inaceitável rodar em toda mensagem casual ("oi", "tudo bem?"). Mas pular
-    # ela inteira fazia a Lyra recusar/errar fatos triviais que estão na wiki
-    # ingerida — então só pula mesmo em conversa casual, não em perguntas.
-    ids_rag: list[str] = []  # IDs Qdrant usados no RAG desta mensagem (Innovation 5)
-    if cerebro_ativo and _rag.active and (eh_pergunta_memoria or eh_pergunta_factual):
-        try:
-            # to_thread: _rag.search é síncrona (httpx.post bloqueante em embed/
-            # rerank + BM25 em CPU) — sem isso, travava o event loop inteiro do
-            # uvicorn por 5-10s, inclusive /health e o WS de voz.
-            # top_k ajustado dinamicamente pela carga cognitiva (Innovation 4)
-            resultados = await asyncio.to_thread(_rag.search, msg.texto, top_k=_top_k_ajustado(5))
-            ids_rag = [str(r.get("id", "")) for r in resultados if r.get("id")]
-
-            # Atualiza last_accessed_at e retrieval_count nos vetores recuperados
-            asyncio.create_task(_rag.update_access(resultados))
-
-            # Filtro de episódio + formatação + suplemento de grafo vivem em
-            # RAGEngine.build_context — ver docstring lá pro racional.
-            contexto_str = await _rag.build_context(msg.texto, resultados, eh_pergunta_memoria)
-        except Exception as e:
-            log(f"[FALHA RAG] {e}")
-
-    # Snapshot sanitizado (role/content só) — metadados extras fazem o Groq
-    # rejeitar a request com 400 "unsupported property".
-    mensagens = await _session.sanitized_messages()
-    
-    # Prepara o contexto de realidade (Data/Hora) para evitar alucinações temporais
-    agora = datetime.datetime.now()
-    dia_semana = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"][agora.weekday()]
-    data_hora_str = f"[SISTEMA] Hoje é {dia_semana}, {agora.strftime('%d/%m/%Y as %H:%M')}."
-
-    # Exceção consciente à Diretiva Nº 2 (decidida com Antônio em 24/06/2026):
-    # se o usuário pedir explicitamente pra usar o Claude, a aprovação já está
-    # dada nessa mesma mensagem — não precisa o modelo perguntar de novo.
-    _KEYWORDS_CLOUD_APROVADO = ["faça isso com o claude", "faz isso com o claude",
-                                "usa o claude", "use o claude", "chama o claude",
-                                "chame o claude", "pede ajuda pro claude",
-                                "peça ajuda pro claude", "manda pro claude",
-                                "envia pro claude", "pede pro claude"]
-    eh_aprovacao_cloud_explicita = any(_sem_acento(kw) in msg_lower for kw in _KEYWORDS_CLOUD_APROVADO)
-
-    # Câmara de Eco Heurística (02/07/2026) — confirmação explícita de uma ação
-    # de alto risco bloqueada por _executar_tool_segura(). Frases pareadas com
-    # verbo de ação (não "sim"/"confirmo" soltos) — reduz colisão com confirmações
-    # de outro assunto (ex: confirmar um compromisso de calendário). Duas travas
-    # combinadas: só aprova a ação EXATA que está pendente (_ultima_acao_bloqueada,
-    # nunca uma diferente) e só no turno IMEDIATAMENTE seguinte ao bloqueio
-    # (índice de historico_recente igual ao registrado no momento do bloqueio) —
-    # a janela de 10min sozinha não bastaria pra evitar aprovação fora de contexto.
-    _KEYWORDS_RISCO_APROVADO = [_sem_acento(k) for k in [
-        "confirmo, pode executar", "confirmo, executa", "sim, executa mesmo assim",
-        "sim, pode executar", "autorizo, pode fazer", "autorizo a executar",
-        "pode continuar mesmo assim", "manda ver, confirmado", "pode fazer mesmo assim",
-        "executa mesmo assim", "confirmado, pode rodar"]]
-    eh_aprovacao_risco_explicita = False
-    aviso_risco_str = ""
-    if _ultima_acao_bloqueada is not None:
-        dentro_da_janela = (time.time() - _ultima_acao_bloqueada["ts"]) < 600  # 10min
-        eh_proximo_turno = _session.turn_counter == _ultima_acao_bloqueada["turno_bloqueio"] + 1
-        if dentro_da_janela and eh_proximo_turno and any(kw in msg_lower for kw in _KEYWORDS_RISCO_APROVADO):
-            eh_aprovacao_risco_explicita = True
-            _h = _ultima_acao_bloqueada["hash"]
-            with _lock_risco:
-                _confirmacoes_risco[_h] = time.time()
-            aviso_risco_str = (f"\n\n[SISTEMA] O usuário confirmou explicitamente a ação de risco pendente "
-                               f"({_ultima_acao_bloqueada['nome']}: {_ultima_acao_bloqueada['motivo']}). "
-                               f"Chame a MESMA ferramenta de novo com os MESMOS parâmetros de antes.")
-
-    if len(mensagens) > 0:
-        # Bug real corrigido 02/07/2026: usar mensagens[-1]["content"] assume
-        # que a última entrada de historico_recente É a mensagem desta
-        # requisição — mas entre o append do usuário (linha ~1376) e aqui,
-        # o código faz vários await (RAG híbrido, grafo SurrealDB), cedendo
-        # o event loop. Se uma segunda requisição /chat concorrente também
-        # der append nesse intervalo, mensagens[-1] pode ser a pergunta de
-        # OUTRA requisição, não a desta — a resposta sai contaminada/trocada
-        # entre sessões concorrentes. msg.texto é local a esta requisição,
-        # imune a mutação concorrente — sempre a fonte correta.
-        ultima_msg = msg.texto
-        aviso_cloud_str = ""
-        if eh_aprovacao_cloud_explicita:
-            aviso_cloud_str = ("\n\n[SISTEMA] O usuário autorizou explicitamente o uso do Claude "
-                               "(nuvem) nesta mensagem. Chame consultar_especialista com "
-                               "nivel='cloud' e aprovado=True diretamente, sem perguntar de novo.")
-        aviso_cloud_str += aviso_risco_str
-        if contexto_str:
-            # A instrução rígida de "diga que não tem registro" só faz sentido
-            # quando a pergunta É sobre memória — caso contrário, qualquer match
-            # fraco/irrelevante do RAG fazia a Lyra recusar conversa casual
-            # ("oi, tudo bem?") tratando-a como pergunta de memória sem resposta.
-            if eh_pergunta_memoria:
-                aviso_bloco = f"\n\n[AVISO CRÍTICO]\n- Use timestamps das memórias acima (NUNCA invente datas)\n- Se não encontrar, diga: 'Não tenho registro disso'{aviso_cloud_str}"
-            else:
-                aviso_bloco = aviso_cloud_str
-            mensagens[-1] = {
-                "role": "user",
-                "content": f"{data_hora_str}\n\n[MEMÓRIAS DO CÉREBRO]\n{contexto_str}{aviso_bloco}\n\nUsuário: {ultima_msg}"
-            }
-        else:
-            mensagens[-1] = {
-                "role": "user",
-                "content": f"{data_hora_str}{aviso_cloud_str}\n\nUsuário: {ultima_msg}"
-            }
-
-    # Roteador de Intenção — ativa ferramentas só com keyword no início de palavra
-    # (regex \b, compilada em _TOOL_KEYWORDS_RE no módulo). Evita falsos positivos.
-    precisa_tools = bool(_TOOL_KEYWORDS_RE.search(msg_lower))
-    ferramentas = lyra_tools.TOOLS_SCHEMA if precisa_tools else None
-    if eh_aprovacao_cloud_explicita:
-        precisa_tools = True
-        ferramentas = lyra_tools.TOOLS_SCHEMA
-    if eh_aprovacao_risco_explicita:
-        precisa_tools = True
-        ferramentas = lyra_tools.TOOLS_SCHEMA
-
-    # Enxame de Especialistas (MoE roteado) — proposta formalizada em
-    # LYRA_TECNICO.md 10.9, implementada em 02/07/2026. Antes disso a ordem
-    # da cascata vinha de um if/elif solto (eh_pergunta_codigo). Generaliza
-    # pra uma lista declarativa: cada especialista tem categoria + trigger +
-    # ordem de andares. Adicionar um especialista novo = uma entrada na lista,
-    # não editar lógica de roteamento espalhada. Comportamento idêntico ao
-    # anterior pros 2 especialistas existentes (código, geral) — só reorganiza.
-    especialista = _rotear_especialista(msg_lower, msg.texto)
-
-    async def stream():
-        global _ultima_latencia_ms
-        resposta_completa = ""
-        tier_usado = None
-
-        # Speculative Decoding (Fase 3) — dispara o draft (qwen3:0.6b) já aqui,
-        # em paralelo com a cascata principal, pra não somar latência. Só faz
-        # sentido comparar quando a resposta é texto puro: se ferramentas forem
-        # chamadas, o andar principal vê dados que o draft nunca vê (clima,
-        # hora, resultado de busca) — divergência ali seria falso-positivo.
-        draft_task = asyncio.create_task(_rodar_draft(list(mensagens))) if not precisa_tools else None
-
-        _MAPA_TIERS = {"groq": ("Groq", _stream_groq), "gemini": ("Gemini", _stream_gemini),
-                       "claude": ("Claude", _stream_claude_cli), "local": ("Local", _stream_local)}
-
-        if msg.modelo in _MAPA_TIERS:
-            # Seletor manual do painel — só esse andar, sem fallback (o
-            # usuário escolheu de propósito, melhor falhar visivelmente do
-            # que cair pra outro modelo escondido).
-            andares = [_MAPA_TIERS[msg.modelo]]
-        else:
-            andares = [_MAPA_TIERS[nome] for nome in especialista["andares"]]
-
-        for nome_tier, gerador_fn in andares:
-            try:
-                gerador = gerador_fn(list(mensagens), ferramentas)
-                gerador_pronto = await _primeiro_chunk_ou_falha(gerador)
-            except StopAsyncIteration:
-                log(f"[CASCATA] {nome_tier} retornou vazio — tentando próximo andar.")
-                _registrar_tier(nome_tier, falhou=True)
-                continue
-            except Exception as e:
-                log(f"[CASCATA] {nome_tier} falhou: {e}")
-                _registrar_tier(nome_tier, falhou=True)
-                continue
-
-            tier_usado = nome_tier
-            # Manda a fonte como campo estruturado ("tier"), não como texto
-            # no meio da resposta — o frontend mostra isso discreto no painel
-            # lateral em vez de no balão de chat (pedido do usuário).
-            yield f"data: {json.dumps({'tier': nome_tier})}\n\n"
-            if nome_tier == "Local":
-                log("[CASCATA] Todas as APIs de nuvem falharam — usando qwen3:8b local.")
-
-            try:
-                async for chunk in gerador_pronto:
-                    yield f"data: {json.dumps({'text': chunk})}\n\n"
-                    resposta_completa += chunk
-            except Exception as e:
-                log(f"[CASCATA] {nome_tier} falhou no meio do stream: {e}")
-                yield f"data: {json.dumps({'text': chr(10) + '_(conexao interrompida)_'})}\n\n"
-            break  # comprometido com esse andar (sucesso ou falha no meio) -- nao tenta outro
-
-        if tier_usado is None:
-            log("[CASCATA] Todos os 4 andares falharam.")
-            if draft_task is not None:
-                draft_task.cancel()
-            yield f"data: {json.dumps({'text': 'Todas as fontes de resposta falharam (Groq, Gemini, Claude e o modelo local). Tente novamente em alguns segundos.'})}\n\n"
-            yield "data: [DONE]\n\n"
-            return
-
-        # Speculative Decoding: compara a resposta final com o draft (se deu
-        # tempo de terminar). Divergência alta = log de alerta, não bloqueia
-        # nem altera a resposta — é só um sinal de possível alucinação.
-        divergencia_draft = None
-        if draft_task is not None and resposta_completa:
-            try:
-                draft_texto = await asyncio.wait_for(draft_task, timeout=8)
-            except Exception:
-                draft_texto = None
-            if draft_texto:
-                try:
-                    vetor_final, vetor_draft = await asyncio.gather(
-                        asyncio.to_thread(_embed, resposta_completa.strip()),
-                        asyncio.to_thread(_embed, draft_texto),
-                    )
-                    if vetor_final and vetor_draft:
-                        divergencia_draft = round(1 - _cosine_sim(vetor_final, vetor_draft), 4)
-                        if divergencia_draft > LIMIAR_DIVERGENCIA_ALUCINACAO:
-                            log(f"[SPEC-DECODE] divergência alta ({divergencia_draft}) entre {tier_usado} "
-                                f"e draft qwen3:0.6b — possível alucinação. Draft: {draft_texto[:150]!r}")
-                except Exception as e:
-                    log(f"[SPEC-DECODE] falha ao comparar draft: {e}")
-        elif draft_task is not None:
-            draft_task.cancel()
-
-        if resposta_completa:
-            resposta_limpa = resposta_completa.strip()
-            await _session.append_assistant(resposta_limpa,
-                                            fontes_rag=ids_rag or None,  # Innovation 5
-                                            divergencia_draft=divergencia_draft)
-            asyncio.create_task(registrar_evento(fonte="chat", ator="Lyra", texto=resposta_limpa,
-                                                  fontes_rag=ids_rag or None,
-                                                  divergencia_draft=divergencia_draft))
-
-            # Filtra blocos de codigo e fala em voz alta
-            try:
-                texto_falado = re.sub(r'```.*?```', '', resposta_limpa, flags=re.DOTALL)
-                texto_falado = re.sub(r'`.*?`', '', texto_falado)
-                texto_falado = texto_falado.replace('*', '').replace('#', '')
-                if texto_falado.strip() and 'audio_manager' in globals() and not _tts_mudo:
-                    asyncio.create_task(audio_manager.falar(texto_falado.strip()))
-            except Exception as e:
-                log(f"[ERRO TTS] {e}")
-
-        _ultima_latencia_ms = round((time.monotonic() - _t0_req) * 1000)
-        # Telemetria: registra sucesso do andar que respondeu + latência
-        if tier_usado:
-            _telemetria["total_chats"] += 1
-            _registrar_tier(tier_usado, latencia_ms=_ultima_latencia_ms)
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
-
-
-@app.get("/")
-def raiz():
-    """Endpoint raiz — usado pelo frontend pra checar se o cérebro responde."""
-    return {"servico": "Lyra cerebro_maestro", "ativo": cerebro_ativo, "versao": "2.1"}
-
-
-@app.get("/dashboard")
-def dashboard():
-    """Dashboard de monitoramento standalone — abre em qualquer navegador
-    (http://localhost:8000/dashboard). Polla /health, /stats e /metrics."""
-    from fastapi.responses import HTMLResponse
-    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
-    try:
-        with open(caminho, "r", encoding="utf-8") as f:
-            return HTMLResponse(f.read())
-    except Exception as e:
-        return HTMLResponse(f"<h1>Dashboard indisponível</h1><p>{e}</p>", status_code=500)
-
-
-@app.get("/status")
-def status():
-    return {"cerebro_ativo": cerebro_ativo,
-            "qdrant": _rag.active,
-            "embedder": _embed_service_ok(),  # embed_service :8001 (BGE-M3)
-            "tts_mudo": _tts_mudo,
-            "carga_cognitiva": _carga_cognitiva}  # Innovation 4
-
-
-@app.get("/stats")
-def stats():
-    """Telemetria da cascata: distribuição de uso, latência média e taxa de falha por andar."""
-    tiers_out = {}
-    for nome, t in _telemetria["tiers"].items():
-        usos = t.get("usos", 0)
-        falhas = t.get("falhas", 0)
-        lat_total = t.get("latencia_total_ms", 0)
-        total_tentativas = usos + falhas
-        tiers_out[nome] = {
-            "usos": usos,
-            "falhas": falhas,
-            "latencia_media_ms": round(lat_total / usos) if usos else None,
-            "taxa_sucesso": round(usos / total_tentativas * 100, 1) if total_tentativas else None,
-        }
-    total = _telemetria.get("total_chats", 0)
-    return {
-        "total_chats": total,
-        "iniciado_em": _telemetria.get("iniciado_em"),
-        "tiers": tiers_out,
-        "distribuicao_pct": {
-            nome: round(t["usos"] / total * 100, 1) if total else 0
-            for nome, t in _telemetria["tiers"].items()
-        },
-    }
-
-
-@app.get("/stats/historico")
-def stats_historico(limite: int = 200):
-    """Série temporal de telemetria — snapshots tirados a cada ~5min pelo
-    loop_proativo. Usado pelo gráfico do painel lateral (distinto do /stats,
-    que só mostra o acumulado desde o último restart)."""
-    return {"snapshots": _ler_telemetria_historico(limite)}
-
-
-@app.get("/health")
-async def health():
-    """Health check completo com latência real de todos os serviços."""
-    import time as _time
-
-    async def _ping(url: str, timeout: float = 3.0) -> tuple[bool, float | None]:
-        t0 = _time.monotonic()
-        try:
-            await _http_health_client.get(url, timeout=timeout)
-            return True, round((_time.monotonic() - t0) * 1000, 1)
-        except Exception:
-            return False, None
-
-    async def _ping_post(url: str, data: str, headers: dict, auth, timeout=3.0):
-        t0 = _time.monotonic()
-        try:
-            await _http_health_client.post(url, data=data, headers=headers, auth=auth, timeout=timeout)
-            return True, round((_time.monotonic() - t0) * 1000, 1)
-        except Exception:
-            return False, None
-
-    qdrant_ok, qdrant_ms   = await _ping(f"{cfg.QDRANT_URL}/healthz")
-    surreal_ok, surreal_ms = await _ping_post(
-        cfg.SURREAL_URL, "RETURN 1", cfg.SURREAL_HEADERS, cfg.SURREAL_AUTH)
-    ollama_ok, ollama_ms   = await _ping(f"{cfg.OLLAMA_URL}/api/tags")
-
-    # VRAM via nvidia-smi
-    vram_info = {}
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "nvidia-smi", "--query-gpu=memory.used,memory.total,utilization.gpu",
-            "--format=csv,noheader,nounits",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )
-        saida, _ = await asyncio.wait_for(proc.communicate(), timeout=3)
-        partes = saida.decode().strip().split(",")
-        if len(partes) == 3:
-            vram_info = {
-                "usada_mb":  int(partes[0].strip()),
-                "total_mb":  int(partes[1].strip()),
-                "gpu_pct":   int(partes[2].strip()),
-            }
-    except Exception:
-        pass
-
-    # Vetores no Qdrant (coleção ativa em produção)
-    qdrant_vetores = {}
-    if _rag.active:
-        try:
-            qdrant_vetores[_COLECAO] = _rag.qdrant_client.count(_COLECAO).count
-        except Exception:
-            qdrant_vetores[_COLECAO] = None
-
-    return {
-        "cerebro":  {"ok": cerebro_ativo, "embedder": _embed_service_ok(), "bm25": _rag.bm25_index is not None},
-        "qdrant":   {"ok": qdrant_ok,   "latencia_ms": qdrant_ms,   "vetores": qdrant_vetores},
-        "surreal":  {"ok": surreal_ok,  "latencia_ms": surreal_ms},
-        "ollama":   {"ok": ollama_ok,   "latencia_ms": ollama_ms},
-        "vram":     vram_info,
-        "latencia_ultimo_chat_ms": _ultima_latencia_ms,
-    }
-
-
-@app.post("/tts/mudo")
-def definir_tts_mudo(payload: dict):
-    """Liga/desliga a resposta por voz (audio_manager.falar) globalmente —
-    botão de mute no frontend. Estado vive em memória, não persiste reinício
-    do cérebro (o frontend reaplica via localStorage assim que reconecta)."""
+def _set_tts_mudo(valor: bool):
     global _tts_mudo
-    _tts_mudo = bool(payload.get("mudo", False))
-    return {"ok": True, "tts_mudo": _tts_mudo}
+    _tts_mudo = valor
 
 
-@app.post("/tts/falar")
-async def tts_falar(payload: dict):
-    """Dispara TTS pra um texto arbitrário — usado pelo frontend pra reler uma
-    resposta ou falar uma notificação. Respeita o mute global."""
-    texto = (payload.get("texto") or "").strip()
-    if not texto:
-        return {"ok": False, "erro": "texto vazio"}
-    if _tts_mudo:
-        return {"ok": False, "erro": "TTS mutado"}
-    if "audio_manager" not in globals():
-        return {"ok": False, "erro": "audio_manager indisponível"}
-    asyncio.create_task(audio_manager.falar(texto[:500]))
-    return {"ok": True}
+def _set_ultima_latencia_ms(valor):
+    global _ultima_latencia_ms
+    _ultima_latencia_ms = valor
 
 
-@app.get("/exportar")
-async def exportar_conversa():
-    """Exporta o histórico em memória como markdown — pra salvar/compartilhar a sessão."""
-    hist = await _session.snapshot()
-    linhas = [f"# Conversa com a Lyra — {datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}", ""]
-    for m in hist:
-        autor = "**Antônio**" if m["role"] == "user" else "**Lyra**"
-        linhas.append(f"{autor}: {m['content']}")
-        linhas.append("")
-    return {"markdown": "\n".join(linhas), "total_msgs": len(hist)}
+_mapa_tiers_chat = {"groq": ("Groq", _stream_groq), "gemini": ("Gemini", _stream_gemini),
+                    "claude": ("Claude", _stream_claude_cli), "local": ("Local", _stream_local)}
+_audio_manager_ref = globals().get("audio_manager")
+
+# Toggle de ferramentas (painel MCP, seção 9 item 5) — set compartilhado por
+# referência entre ChatRouter (filtra na hora de montar `ferramentas`) e
+# ToolsRouter (liga/desliga via POST /tools/{nome}/toggle). Em memória só —
+# mesmo padrão de não-persistência que _tts_mudo já usa.
+_tools_desabilitadas: set = set()
+
+from routers.chat import ChatRouter
+
+_chat_router = ChatRouter(
+    log=log,
+    session=_session,
+    rag=_rag,
+    get_cerebro_ativo=lambda: cerebro_ativo,
+    top_k_ajustado=_top_k_ajustado,
+    classificar_intencao=_classificar_intencao,
+    sem_acento=_sem_acento,
+    registrar_evento=registrar_evento,
+    rotear_especialista=_rotear_especialista,
+    tool_keywords_re=_TOOL_KEYWORDS_RE,
+    tools_schema=lyra_tools.TOOLS_SCHEMA,
+    tools_desabilitadas=_tools_desabilitadas,
+    rodar_draft=_rodar_draft,
+    mapa_tiers=_mapa_tiers_chat,
+    primeiro_chunk_ou_falha=_primeiro_chunk_ou_falha,
+    registrar_tier=_registrar_tier,
+    embed=_embed,
+    cosine_sim=_cosine_sim,
+    limiar_divergencia_alucinacao=LIMIAR_DIVERGENCIA_ALUCINACAO,
+    get_ultima_acao_bloqueada=lambda: _ultima_acao_bloqueada,
+    confirmacoes_risco=_confirmacoes_risco,
+    lock_risco=_lock_risco,
+    get_tts_mudo=lambda: _tts_mudo,
+    set_tts_mudo=_set_tts_mudo,
+    set_ultima_latencia_ms=_set_ultima_latencia_ms,
+    telemetria=_telemetria,
+    audio_manager=_audio_manager_ref,
+)
+app.include_router(_chat_router.router)
 
 
-@app.post("/upload")
-async def upload_arquivo(file: UploadFile = File(...)):
-    """Recebe imagem/áudio colado ou anexado no chat do frontend. Salva em
-    Sons/cache/uploads e devolve o path — o frontend então manda esse path
-    numa mensagem de chat normal, e o modelo decide chamar analisar_imagem
-    ou transcrever_audio dependendo do tipo de arquivo."""
-    nome_seguro = re.sub(r"[^a-zA-Z0-9_.-]", "_", file.filename or "arquivo")
-    destino = os.path.join(_PASTA_UPLOADS, f"{int(time.time())}_{nome_seguro}")
-    conteudo = await file.read()
-    with open(destino, "wb") as f:
-        f.write(conteudo)
-    return {"ok": True, "path": destino, "nome": nome_seguro, "bytes": len(conteudo)}
-
-
-_gpu_cache: dict = {}
-_gpu_cache_ts: float = 0.0
-
-@app.get("/metrics")
-async def metrics():
-    global _gpu_cache, _gpu_cache_ts
-    dados = {
-        "latencia_ms": _ultima_latencia_ms,
-        "cpu_pct":     psutil.cpu_percent(interval=None),
-        "ram_pct":     psutil.virtual_memory().percent,
-        "gpu_pct":     None,
-        "vram_pct":    None,
-    }
-    # GPU via nvidia-smi com cache de 4s — evita 1 subprocesso por poll do frontend
-    agora_t = time.monotonic()
-    if agora_t - _gpu_cache_ts > 4:
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
-                "--format=csv,noheader,nounits",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )
-            saida, _ = await asyncio.wait_for(proc.communicate(), timeout=2)
-            parts = saida.decode().strip().split(",")
-            if len(parts) == 3:
-                _gpu_cache = {
-                    "gpu_pct":  int(parts[0].strip()),
-                    "vram_pct": round(int(parts[1].strip()) / int(parts[2].strip()) * 100),
-                }
-                _gpu_cache_ts = agora_t
-        except Exception:
-            pass
-    dados.update(_gpu_cache)
-    return dados
 
 
 import lyra_agentes as _agentes
-
-
-class EnxameRequest(BaseModel):
-    objetivo:     str
-    subtarefas:   list[str]
-    max_paralelo: int = 3
-
-
-@app.post("/enxame")
-async def enxame_criar(req: EnxameRequest):
-    return await _agentes.criar_enxame(req.objetivo, req.subtarefas, req.max_paralelo)
-
-
-@app.get("/enxames")
-async def enxames_listar(limite: int = 20):
-    return await _agentes.listar_enxames(limite)
-
-
-@app.get("/enxame/{enxame_id}")
-async def enxame_status(enxame_id: str):
-    return await _agentes.status_enxame(enxame_id)
-
-
-@app.post("/enxame/{enxame_id}/consolidar")
-async def enxame_consolidar(enxame_id: str):
-    resultado = await _agentes.consolidar_enxame(enxame_id)
-    # Notifica proativamente quando consolidação termina
-    if "resumo" in resultado:
-        lyra_tools.notificar_usuario(
-            titulo="Enxame consolidado",
-            mensagem=resultado["resumo"][:200],
-            urgencia="normal",
-        )
-    return resultado
-
-
 import lyra_agent as _agent_module
 
+from routers.agents import AgentsRouter
 
-class AgenteRequest(BaseModel):
-    objetivo:      str
-    max_iteracoes: int = 10
-
-
-@app.post("/agente")
-async def agente_executar(req: AgenteRequest):
-    """Loop ReAct autônomo (lyra_agent.py) — recebe objetivo, itera com ferramentas
-    e retorna resultado final. Não usa streaming; aguarda conclusão antes de responder."""
-    return await _agent_module.executar_agente_async(req.objetivo, req.max_iteracoes)
-
-
-@app.get("/agente/runs")
-async def agente_runs(limite: int = 20):
-    """Lista execuções recentes do agente autônomo (tabela agente_run no SurrealDB)."""
-    runs = await surreal.query_result(
-        f"SELECT id, objetivo, sucesso, iteracoes, criado_em FROM agente_run "
-        f"ORDER BY criado_em DESC LIMIT {min(limite, 100)};")
-    return {"total": len(runs), "runs": runs}
+_agents_router = AgentsRouter(
+    agentes_module=_agentes,
+    agent_module=_agent_module,
+    surreal=surreal,
+    notificar_usuario=lyra_tools.notificar_usuario,
+    log=log,
+)
+app.include_router(_agents_router.router)
 
 
-@app.get("/historico")
-async def historico_get(sessao: str | None = None):
-    """Sem parâmetro: histórico em memória (comportamento original).
-    Com ?sessao=<id>: mensagens daquela sessão direto do SurrealDB
-    ('legado' = eventos gravados antes da migração de sessões)."""
-    if not sessao:
-        hist = await _session.snapshot()
-        return {"total": len(hist), "mensagens": hist}
-    cond = "sessao_id IS NONE" if sessao == "legado" else f"sessao_id = {json.dumps(sessao)}"
-    try:
-        dados = await _sql_surreal(
-            f"SELECT ator, texto, timestamp FROM evento WHERE {cond} "
-            "ORDER BY timestamp ASC LIMIT 300")
-        eventos = _surreal_result(dados)
-    except Exception as e:
-        return {"erro": f"Falha ao ler sessão: {e}", "total": 0, "mensagens": []}
-    mensagens = [
-        {"role": "assistant" if ev.get("ator", "").lower() == "lyra" else "user",
-         "content": ev.get("texto", ""), "timestamp": ev.get("timestamp", "")}
-        for ev in eventos
-    ]
-    return {"total": len(mensagens), "mensagens": mensagens, "sessao": sessao}
+from routers.sessions import SessionsRouter
+
+_sessions_router = SessionsRouter(
+    session=_session,
+    sql_surreal=_sql_surreal,
+    surreal_result=_surreal_result,
+    sessao_id_limpo=_sessao_id_limpo,
+    log=log,
+)
+app.include_router(_sessions_router.router)
 
 
-class SessaoAtivar(BaseModel):
-    sessao_id: str
+from routers.memory import MemoryRouter
 
-
-@app.get("/sessoes")
-async def sessoes_listar():
-    """Lista as sessões de conversa pra sidebar do frontend (mais recentes
-    primeiro). Inclui uma entrada sintética 'legado' se existirem eventos
-    gravados antes da migração de sessões."""
-    itens = []
-    try:
-        dados = await _sql_surreal("SELECT id, criada, titulo FROM sessao ORDER BY criada DESC LIMIT 40")
-        for r in _surreal_result(dados):
-            sid = _sessao_id_limpo(r.get("id", ""))
-            itens.append({
-                "sessao_id": sid,
-                "titulo": r.get("titulo") or "conversa sem título",
-                "criada": r.get("criada", ""),
-                "ativa": sid == _session.session_id,
-            })
-    except Exception as e:
-        return {"erro": f"Falha ao listar sessões: {e}", "sessoes": []}
-    try:
-        dados = await _sql_surreal("SELECT count() FROM evento WHERE sessao_id IS NONE GROUP ALL")
-        legado = _surreal_result(dados)
-        if legado and legado[0].get("count", 0) > 0:
-            itens.append({"sessao_id": "legado", "titulo": "conversas antigas (pré-sessões)",
-                          "criada": "", "ativa": False, "somente_leitura": True})
-    except Exception:
-        pass  # contagem de legado é cosmética — a lista principal já foi montada
-    return {"total": len(itens), "sessoes": itens, "ativa": _session.session_id}
-
-
-@app.post("/sessoes")
-async def sessao_nova():
-    """Cria uma nova sessão de conversa e a torna ativa. O histórico em
-    memória é zerado — a Lyra começa a conversa limpa (SurrealDB/Qdrant
-    seguem intactos, memória de longo prazo continua via RAG)."""
-    return await _session.new_session()
-
-
-@app.post("/sessoes/ativar")
-async def sessao_ativar(req: SessaoAtivar):
-    """Torna outra sessão a ativa e recarrega o histórico com as últimas
-    mensagens dela ('legado' é somente leitura — use GET /historico)."""
-    return await _session.activate_session(req.sessao_id)
-
-
-class SessaoRenomear(BaseModel):
-    titulo: str
-
-
-@app.patch("/sessoes/{sessao_id}")
-async def sessao_renomear(sessao_id: str, req: SessaoRenomear):
-    return await _session.rename_session(sessao_id, req.titulo)
-
-
-@app.delete("/sessoes/{sessao_id}")
-async def sessao_deletar(sessao_id: str):
-    return await _session.delete_session(sessao_id)
-
-
-@app.delete("/historico")
-async def historico_limpar():
-    """Limpa o histórico em memória (não apaga SurrealDB/Qdrant)."""
-    await _session.clear_history()
-    log("[HIST] Histórico em memória limpo via DELETE /historico.")
-    return {"ok": True, "mensagem": "Histórico em memória limpo."}
-
-
-@app.get("/grafo")
-async def grafo_buscar(q: str, limite: int = 5):
-    """Traversal de grafo SurrealDB: retorna eventos ligados aos tópicos da query."""
-    if not q.strip():
-        return {"erro": "Parâmetro 'q' obrigatório."}
-    eventos = await buscar_grafo_surreal(q, limite=min(limite, 20))
-    return {
-        "query": q,
-        "keywords": _extrair_keywords(q, n=3),
-        "total": len(eventos),
-        "eventos": [
-            {
-                "ator":      ev.get("ator", "?"),
-                "texto":     ev.get("texto", "")[:400],
-                "timestamp": ev.get("timestamp", ""),
-            }
-            for ev in eventos
-        ],
-    }
-
-
-@app.get("/grafo/completo")
-async def grafo_completo(limite: int = 300):
-    """Retorna o grafo completo de memória para visualização 3D.
-    Formato {nodes, links} compatível com 3d-force-graph."""
-    try:
-        async def _sql(q):
-            result = await surreal.query_result(q)
-            return result if isinstance(result, list) else []
-
-        eventos  = await _sql(f"SELECT id, texto, ator, timestamp FROM evento ORDER BY timestamp DESC LIMIT {limite};")
-        sobre    = await _sql(f"SELECT in, out FROM sobre LIMIT {limite * 4};")
-        precedeu = await _sql(f"SELECT in, out FROM precedeu LIMIT {limite};")
-
-        nodes, links = [], []
-        ids_vistos: set[str] = set()
-
-        # Eventos
-        for ev in eventos:
-            eid = str(ev.get("id", ""))
-            if eid and eid not in ids_vistos:
-                nodes.append({
-                    "id":    eid,
-                    "tipo":  "evento",
-                    "label": (ev.get("texto") or eid)[:90],
-                    "ator":  ev.get("ator", ""),
-                    "ts":    ev.get("timestamp", ""),
-                })
-                ids_vistos.add(eid)
-
-        # Tópicos extraídos das relações "sobre" (não há tabela topico separada)
-        for a in sobre:
-            src = str(a.get("in", ""))
-            dst = str(a.get("out", ""))
-            if not src or not dst:
-                continue
-            links.append({"source": src, "target": dst, "rel": "sobre"})
-            if dst not in ids_vistos and dst.startswith("topico:"):
-                label = dst.split(":", 1)[-1]
-                nodes.append({"id": dst, "tipo": "topico", "label": label})
-                ids_vistos.add(dst)
-
-        for a in precedeu:
-            src, dst = str(a.get("in", "")), str(a.get("out", ""))
-            if src and dst:
-                links.append({"source": src, "target": dst, "rel": "precedeu"})
-
-        # "sobre"/"precedeu" podem referenciar eventos fora da janela dos
-        # `limite` mais recentes (a query de evento tem LIMIT, a de link não
-        # é sincronizada com ela) — link órfão apontando pra um nó que não
-        # está em `nodes` crasha o 3d-force-graph no frontend (erro não
-        # tratado que derruba o grafo inteiro). Descarta aqui, na origem.
-        links = [l for l in links if l["source"] in ids_vistos and l["target"] in ids_vistos]
-
-        return {"nodes": nodes, "links": links,
-                "total_nodes": len(nodes), "total_links": len(links)}
-
-    except Exception as e:
-        log(f"[GRAFO/COMPLETO] Erro: {e}")
-        return {"nodes": [], "links": [], "erro": str(e)}
-
-
-@app.get("/resumo_sessao")
-async def resumo_sessao():
-    """Retorna o briefing da sessão atual + histórico recente em memória."""
-    hist = await _session.snapshot()
-    return {
-        "briefing": _session.briefing.strip(),
-        "historico": [
-            {"role": m["role"], "preview": m["content"][:200]}
-            for m in hist
-        ],
-        "total_msgs": len(hist),
-    }
-
-
-@app.get("/buscar")
-def buscar(q: str, top_k: int = 5, categoria: str = ""):
-    if not cerebro_ativo:
-        return {"erro": "Cérebro não inicializado"}
-    try:
-        resultados = buscar_hibrido(q, top_k=top_k, categoria=categoria)
-        return {"query": q, "categoria_filtro": categoria or "todas", "resultados": [
-            {"id":            str(r.get("id", "")),
-             "score_final":   round(r.get("score_final", 0), 4),
-             "rerank_score":  round(r["rerank_score"], 4) if r.get("rerank_score") is not None else None,
-             "rrf_score":     r["rrf_score"],
-             "dense_score":   round(r["dense_score"], 4) if r["dense_score"] is not None else None,
-             "bm25_score":    round(r["bm25_score"], 4) if r["bm25_score"] is not None else None,
-             "freshness_factor": r.get("freshness_factor"),  # Innovation 2
-             "titulo":        r["payload"].get("titulo", ""),
-             "categoria":     r["payload"].get("categoria", ""),
-             "trecho":        r["payload"].get("texto", "")[:300]}
-            for r in resultados]}
-    except Exception as e:
-        return {"erro": str(e)}
-
-
-@app.get("/memoria/categorias")
-async def memoria_categorias():
-    """Composição da base de conhecimento por categoria, via facet do Qdrant
-    (distinct counts exatos e eficientes). Mostra o que a Lyra 'sabe'."""
-    if not cerebro_ativo or not _rag.active:
-        return {"erro": "Cérebro não inicializado"}
-    total_colecao = 0
-    try:
-        total_colecao = _rag.qdrant_client.count(_COLECAO).count
-    except Exception:
-        pass
-    por_categoria = {}
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{cfg.QDRANT_URL}/collections/{_COLECAO}/facet",
-                json={"key": "categoria", "limit": 50, "exact": False},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            hits = resp.json().get("result", {}).get("hits", [])
-            por_categoria = {h["value"]: h["count"] for h in hits}
-    except Exception as e:
-        return {"total_colecao": total_colecao, "erro": f"facet falhou: {e}"}
-    return {"total_colecao": total_colecao, "categorias_distintas": len(por_categoria),
-            "por_categoria": por_categoria}
-
-
-class ShadowRequest(BaseModel):
-    fases: str = "nrem,rem,deep"  # fases separadas por vírgula
-
-
-@app.post("/shadow_thoughts")
-async def shadow_thoughts_disparar(req: ShadowRequest = ShadowRequest()):
-    """Dispara o ciclo de Shadow Thoughts em background (NREM/REM/DEEP).
-    Retorna imediatamente — progresso aparece no maestro.log."""
-    import lyra_shadow_thoughts as _st
-    fases = [f.strip().lower() for f in req.fases.split(",") if f.strip() in {"nrem", "rem", "deep"}]
-    if not fases:
-        return {"erro": "Fases inválidas. Use 'nrem,rem,deep' ou subconjunto."}
-    asyncio.create_task(_st.ciclo_completo(fases))
-    log(f"[SHADOW] Ciclo disparado manualmente — fases: {fases}")
-    return {"ok": True, "fases_disparadas": fases, "mensagem": "Ciclo iniciado em background — veja maestro.log."}
+_memory_router = MemoryRouter(
+    rag=_rag,
+    session=_session,
+    get_cerebro_ativo=lambda: cerebro_ativo,
+    buscar_grafo=buscar_grafo_surreal,
+    extrair_keywords=_extrair_keywords,
+    buscar_hibrido=buscar_hibrido,
+    colecao=_COLECAO,
+    log=log,
+)
+app.include_router(_memory_router.router)
 
 
 # ── Voz bidirecional (Gemini Live API) ───────────────────────────────────────
 _voice_live_ativas = 0  # sessões /ws/voice abertas agora — exposto em /integracoes
 
-@app.websocket("/ws/voice")
-async def voice_ws(websocket: WebSocket):
+
+def _incrementar_voice_live():
     global _voice_live_ativas
     _voice_live_ativas += 1
-    try:
-        await lyra_voice_live.voice_session(websocket, GEMINI_API_KEY)
-    finally:
-        _voice_live_ativas -= 1
 
 
-# ── Integrações — status unificado pro painel do frontend ────────────────────
+def _decrementar_voice_live():
+    global _voice_live_ativas
+    _voice_live_ativas -= 1
+
+
+from routers.auth import AuthRouter
+from utils.auth import UserRepository, JWTManager
+
+_user_repo = UserRepository(surreal)
+_jwt_manager = JWTManager(cfg.AUTH_JWT_SECRET)
+_auth_router = AuthRouter(user_repo=_user_repo, jwt_manager=_jwt_manager)
+app.include_router(_auth_router.router)
+# NOTA: nenhuma rota existente ganhou Depends(get_current_user) ainda —
+# o frontend React atual não tem tela de login, gatear agora trancaria o
+# usuário fora do próprio app. Aplicar isso é trabalho da Fase 4 (frontend
+# SvelteKit com onboarding/login), ver PROGRESSAO_LYRAV2.md.
+
+
+from routers.misc import MiscRouter
+
+_misc_router = MiscRouter(
+    pasta_uploads=_PASTA_UPLOADS,
+    voice_session=lyra_voice_live.voice_session,
+    gemini_api_key=GEMINI_API_KEY,
+    increment_voice_live=_incrementar_voice_live,
+    decrement_voice_live=_decrementar_voice_live,
+)
+app.include_router(_misc_router.router)
+
+
+# ── Router de sistema/status (OOP refactor, ver routers/system.py) ──────────
 def _processo_rodando(trecho: str) -> bool:
     """True se existe um processo cujo cmdline contém o trecho (ex: 'mic_engine')."""
     try:
@@ -1496,25 +811,76 @@ def _processo_rodando(trecho: str) -> bool:
     return False
 
 
-@app.get("/integracoes")
-async def integracoes_status():
-    """Agrega o status das integrações num payload único pra view de
-    integrações do frontend. Chaves casam com os ids dos cards no ui.js."""
-    telegram_on = await asyncio.to_thread(_processo_rodando, "lyra_telegram")
-    mic_on      = await asyncio.to_thread(_processo_rodando, "mic_engine")
-    return {
-        "telegram": {"online": telegram_on,
-                     "status": "bot rodando" if telegram_on else "processo parado"},
-        "voz_live": {"online": _voice_live_ativas > 0,
-                     "status": f"{_voice_live_ativas} sessão(ões) ativa(s)"
-                               if _voice_live_ativas else "pronta — clique no botão de voz live"},
-        "mic":      {"online": mic_on,
-                     "status": "escutando wake-word" if mic_on else "mic_engine.py parado"},
-        "tts":      {"online": not _tts_mudo,
-                     "status": "mudo" if _tts_mudo else "respondendo por voz"},
-        "enxame":   {"online": True, "status": "disponível via /enxame"},
-        "upload":   {"online": True, "status": "imagem · áudio · vídeo"},
-    }
+from routers.system import SystemRouter
+
+_system_router = SystemRouter(
+    rag=_rag,
+    get_cerebro_ativo=lambda: cerebro_ativo,
+    get_tts_mudo=lambda: _tts_mudo,
+    get_carga_cognitiva=lambda: _carga_cognitiva,
+    telemetria=_telemetria,
+    ler_telemetria_historico=_ler_telemetria_historico,
+    get_ultima_latencia_ms=lambda: _ultima_latencia_ms,
+    embed_service_ok=_embed_service_ok,
+    colecao=_COLECAO,
+    http_health_client=_http_health_client,
+    dashboard_html_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html"),
+    processo_rodando=_processo_rodando,
+    get_voice_live_ativas=lambda: _voice_live_ativas,
+)
+app.include_router(_system_router.router)
+
+
+from routers.prompts import PromptsRouter
+
+_prompts_router = PromptsRouter(surreal=surreal, sessao_id_limpo=_sessao_id_limpo)
+app.include_router(_prompts_router.router)
+
+
+from routers.models_hub import ModelsHubRouter
+
+_models_hub_router = ModelsHubRouter(ollama_url=cfg.OLLAMA_URL, log=log)
+app.include_router(_models_hub_router.router)
+
+
+from routers.tools import ToolsRouter
+
+_tools_router = ToolsRouter(tools_schema=lyra_tools.TOOLS_SCHEMA, tools_desabilitadas=_tools_desabilitadas)
+app.include_router(_tools_router.router)
+
+
+from routers.logs import LogsRouter
+
+_logs_router = LogsRouter(
+    log_path=_LOG_PATH,
+    err_path=os.path.join(os.path.dirname(_LOG_PATH), "maestro.err"),
+)
+app.include_router(_logs_router.router)
+
+
+from routers.gateway import GatewayRouter
+
+# Gateway WS (Fase 3) — montado por último, porque reaproveita os métodos dos
+# routers REST já instanciados acima em vez de duplicar lógica. Só ações de
+# LEITURA por enquanto (ver docstring de routers/gateway.py pro motivo).
+_gateway_router = GatewayRouter(
+    actions={
+        "status":             _system_router.status,
+        "stats":              _system_router.stats,
+        "health":             _system_router.health,
+        "integracoes":        _system_router.integracoes,
+        "sessoes_listar":     _sessions_router.sessoes_listar,
+        "historico_get":      _sessions_router.historico_get,
+        "resumo_sessao":      _memory_router.resumo_sessao,
+        "buscar":             _memory_router.buscar,
+        "memoria_categorias": _memory_router.memoria_categorias,
+        "enxames_listar":     _agents_router.enxames_listar,
+        "enxame_status":      _agents_router.enxame_status,
+        "agente_runs":        _agents_router.agente_runs,
+    },
+    log=log,
+)
+app.include_router(_gateway_router.router)
 
 
 # ── MCP (Model Context Protocol) ─────────────────────────────────────────────

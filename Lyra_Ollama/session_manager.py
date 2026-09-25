@@ -340,6 +340,19 @@ class SessionManager:
             self._title_ok = True
         return {"ok": True}
 
+    async def favorite_session(self, sessao_id: str, favorita: bool) -> dict:
+        """Marca/desmarca uma sessão como favorita (PLANEJAMENTO_LYRA2.0.md
+        seção 9 item 4). Campo `favorita` é aditivo — SurrealDB é schemaless,
+        sessões antigas sem o campo simplesmente respondem False quando lidas
+        (ver SessionsRouter.sessoes_listar)."""
+        try:
+            await self._surreal.query(
+                f'UPDATE type::record("sessao", {json.dumps(sessao_id)}) '
+                f"SET favorita = {json.dumps(favorita)}")
+        except Exception as e:
+            return {"erro": f"Falha ao favoritar: {e}"}
+        return {"ok": True, "favorita": favorita}
+
     async def delete_session(self, sessao_id: str) -> dict:
         """Delete a session and its events. If it was the active session,
         switches to a fresh one so the caller always has somewhere to land."""

@@ -46,6 +46,14 @@ DRAFT_MODEL      = "qwen3:0.6b"            # hallucination-detection sidecar
 QDRANT_COLLECTION = "lyra_memory_v2"       # BGE-M3 1024d (migration 26/06/2026)
 EMBED_DIM         = 1024
 
+# ── Auth (Lyra 2.0 — proteção de acesso mínima, ver PLANEJAMENTO_LYRA2.0.md §5) ─
+# JWT em cookie httpOnly, expiração longa (app pessoal, sem refresh token).
+# AUTH_JWT_SECRET tem default só pra não quebrar em dev sem .env — TROCAR em
+# produção via variável de ambiente (mesma convenção de SURREAL_USER/PASS acima).
+AUTH_JWT_SECRET       = os.getenv("AUTH_JWT_SECRET", "lyra-dev-secret-trocar-no-.env")
+AUTH_COOKIE_NAME      = "lyra_session"
+AUTH_COOKIE_MAX_AGE_S = 60 * 60 * 24 * 30  # 30 dias
+
 # ── Operational limits ───────────────────────────────────────────────────────
 MAX_TOOL_ITERATIONS = 25    # safety cap on tool-calling rounds per chat
 MAX_HISTORY_MSGS    = 14    # history length that triggers compression

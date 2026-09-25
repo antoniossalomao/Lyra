@@ -2,9 +2,9 @@
   "total_chats": 78,
   "tiers": {
     "Groq": {
-      "usos": 70,
+      "usos": 72,
       "falhas": 1,
-      "latencia_total_ms": 468421
+      "latencia_total_ms": 480483
     },
     "Gemini": {
       "usos": 4,

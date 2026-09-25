@@ -155,6 +155,7 @@ Pergunta: se pudéssemos mudar tudo, sem peso de "dar muito trabalho", qual o de
 - **Desktop: os DOIS produtos, assistente E IDE** (decidido — não é ou/ou como eu tinha sugerido).
   - **Theia continua sendo a casca da IDE** (`Lyra_IDE`, já em andamento, Fase C) — é a ferramenta certa pra isso, tem ecossistema de extensão de verdade. Dentro dela, o painel `lyra-chat-ext` passa a carregar o novo frontend **SvelteKit** (troca o iframe React atual).
   - **Empacotamento leve via Tauri** pro modo "só assistente" (sem a IDE completa) — reaproveitando o **mesmo frontend SvelteKit**, já que ele fica desacoplado do shell. Ou seja: 1 frontend Svelte, 2 cascas nativas (Theia pra quem quer a IDE, Tauri pra quem quer só o assistente rodando leve). Padrão de secrets/settings nativos do Jan (seção 3.4) serve de referência pra essa casca Tauri.
+  - **Botão "abrir IDE" na casca Tauri**: app assistente (Tauri) ganha botão que abre a IDE Lyra (Theia). Dois produtos, mas ponte direta entre eles — usuário não precisa fechar um pra abrir outro. Implementação: botão chama `startBackend()`-like do contrato comum (seção 12.3), tipo `openIDE()`, que lança o processo/janela Theia (ou foca se já estiver aberta).
 
 ## 11. Próximos passos (aguardando sua decisão)
 

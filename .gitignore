@@ -33,3 +33,7 @@ Lyra_Core/google_auth/token.json
 # ide/build
 dist/
 build/
+target/
+
+# session logs
+*.out

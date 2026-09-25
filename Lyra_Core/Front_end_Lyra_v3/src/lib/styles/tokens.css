@@ -1,0 +1,65 @@
+/*
+  tokens.css — paleta e tipografia do frontend Lyra 2.0 (SvelteKit).
+
+  Base no style.css do frontend antigo (preto absoluto + neon #00DDFF), mas
+  DISTANCIADA de propósito: usuário pediu minimalismo/elegância antes de
+  fidelidade 1:1 (decisão 2026-08-11, ver memória `lyra_frontend_v2_plano`).
+  Cores menos saturadas, cinza real em vez de preto puro (menos cansativo,
+  ainda escuro), peso de fonte 300 em vez de 200 (o 200 original é elegante
+  mas ilegível em corpo de texto longo).
+*/
+:root {
+  --bg:          #0b0b0d;
+  --surface:     #17171b;
+  --surface-2:   #1f1f24;
+  --border:      rgba(255, 255, 255, 0.08);
+
+  --text:        #e8e8ec;
+  --text-dim:    #8f8f99;
+
+  --accent:      #4fc3d9;  /* neon original #00DDFF, desaturado — menos "cyberpunk", mais elegante */
+  --accent-dim:  rgba(79, 195, 217, 0.14);
+  --danger:      #e5484d;
+
+  --radius:      10px;
+  --shadow:      0 14px 40px rgba(0, 0, 0, 0.45);
+  --ease:        cubic-bezier(0.4, 0, 0.2, 1);
+
+  --font: 'Inter', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-weight: 300;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+input, button {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* "Reduzir movimento" (Configurações > Aparência) — desliga transição/animação
+   CSS globalmente. A esfera (Orb) trata isso separadamente, congelando o
+   rAF em vez de desenhar um frame só parado-mas-borrado. */
+[data-reduce-motion="1"] * {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* prefers-reduced-motion do sistema operacional — respeitado mesmo se o
+   usuário nunca abriu Configurações (acessibilidade não deve depender de
+   descoberta de feature). */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
