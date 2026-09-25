@@ -37,3 +37,6 @@ target/
 
 # session logs
 *.out
+
+# binário grande, baixa de novo se precisar (qdrant.exe)
+bin/qdrant.exe
