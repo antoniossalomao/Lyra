@@ -1,5 +1,6 @@
 # LYRA — Estado Atual do Projeto
 > Consolidado em 10/08/2026 a partir de LYRA_NUCLEO.md, LYRA_TECNICO.md, LYRA_AGENTES_E_PLANOS.md, LYRA_IDE_PLANO.md e da sessão do dia.
+> **Depois de 10/08:** Lyra 2.0 (routers/auth/gateway, frontend v3 SvelteKit + Tauri) — ver `PROGRESSAO_LYRAV2.md` na raiz.
 
 ---
 

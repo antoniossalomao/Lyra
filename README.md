@@ -19,13 +19,13 @@ Windows.
 
 ```
  ┌─────────────────────────────────────────────────────────────┐
- │  Frontend (pywebview, Three.js)  ──ws:8765──┐                │
- │  Lyra_Core/Front_end_Lyra/                   │                │
+ │  Frontends (ver tabela "Frontends")  ──ws:8765 / HTTP──┐     │
+ │  v1 pywebview · v2 React (/ui) · v3 Svelte (/ui-novo)  │     │
  └──────────────────────────────────────────────┼───────────────┘
                                                  │ HTTP :8000
  ┌───────────────────────────────────────────────▼──────────────┐
  │  cerebro_maestro.py  (FastAPI :8000)                          │
- │   • Cascata: Groq → Gemini → Claude(CLI) → qwen3:8b local     │
+ │   • Cascata cloud-first: Groq → Gemini → Claude(CLI) → qwen3  │
  │   • RAG híbrido: BM25 + Qdrant denso + RRF + recência         │
  │   • Grafo de memória (SurrealDB RELATE)                       │
  │   • Telemetria, health, enxame de sub-agentes                 │
@@ -46,6 +46,10 @@ Windows.
 | Qdrant | 6333 | Vetores (`lyra_memory_v2`, BGE-M3 1024d) |
 | SurrealDB | 8090 | Memória episódica + grafo (ns `lyra_core`, db `Db_CORTEX`) |
 | Ollama | 11434 | qwen3:8b local (último andar da cascata) |
+
+> **Cascata cloud-first:** o chat tenta Groq, Gemini e Claude antes do
+> `qwen3:8b` local — o local só responde se os três falharem. Sem as chaves
+> de API, a Lyra funciona 100% offline (só o último andar).
 
 > **Importante (Windows):** todas as chamadas internas entre serviços usam
 > `127.0.0.1`, nunca `localhost` — o resolver IPv6 do `localhost` adiciona
@@ -76,11 +80,18 @@ bin\startup\start_cerebro.bat   :: espera 6333/8090/11434/8001 e sobe o FastAPI
 No boot do Windows, `bin/startup/lyra_boot.vbs` (atalho em Startup) sobe
 qdrant + surreal + embed + cerebro; o Ollama tem atalho próprio.
 
-Frontend desktop:
+## Frontends
 
-```
-python Lyra_Core/Front_end_Lyra/lyra_app.py
-```
+| Pasta | Stack | Como abre | Estado |
+|-------|-------|-----------|--------|
+| `Lyra_Core/Front_end_Lyra/` | pywebview + Three.js | `python Lyra_Core/Front_end_Lyra/lyra_app.py` (hub WS :8765) | v1, produção |
+| `Lyra_Core/Front_end_Lyra_v2/` | React + Vite + TS | `npm run build` → servido pelo backend em `http://127.0.0.1:8000/ui/` | usado pela IDE (Theia) e pelo `Lyra_Desktop` |
+| `Lyra_Core/Front_end_Lyra_v3/` | SvelteKit + Tauri 2 | `npm run build` → `http://127.0.0.1:8000/ui-novo/`; casca nativa em `src-tauri/` | Lyra 2.0 — login, chat, grafo, hub de modelos. Cutover pendente |
+| `Lyra_Core/Lyra_Desktop/` | Electron puro | `npx electron .` — carrega `/ui/` | casca desktop do v2 |
+
+`Lyra_Core/Lyra_IDE/` (Eclipse Theia) é um repo git próprio e fica fora
+deste repositório. Andamento do Lyra 2.0: [PROGRESSAO_LYRAV2.md](PROGRESSAO_LYRAV2.md)
+(plano em [PLANEJAMENTO_LYRA2.0.md](PLANEJAMENTO_LYRA2.0.md)).
 
 ## Dependências
 
@@ -96,6 +107,22 @@ python -m pip install -r requirements.txt   # Python principal (3.12) — inclui
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USERS` — opcionais, só pro bot
   Telegram (`lyra_telegram.py`).
 
+## Segurança — estado atual
+
+- Todos os serviços escutam só em `127.0.0.1`.
+- **Auth:** backend pronto (`routers/auth.py`, PBKDF2-SHA256 + JWT em cookie httpOnly), mas
+  **as rotas ainda não exigem login** — gating só depois do cutover pro v3.
+- **CORS** aceita a origem `"null"` (necessária pro pywebview do v1). Toda
+  página com iframe sandboxed também manda `Origin: null`, então hoje um site
+  aberto no navegador consegue falar com `/chat`. Corrigir junto com o gating
+  de auth.
+- **`/mcp`** expõe os endpoints REST como ferramentas MCP, sem autenticação.
+- `executar_comando` roda PowerShell arbitrário; a contenção é rate limit
+  (`lyra_seguranca.py`) + Câmara de Eco (confirmação no chat pra ações de
+  alto risco).
+
+Reporte de falhas: [SECURITY.md](SECURITY.md).
+
 ## Testes
 
 ```
@@ -103,6 +130,9 @@ python Lyra_Ollama/test_smoke.py            # valida todos os endpoints
 python Lyra_Ollama/test_smoke.py --rapido   # pula o teste de chat (mais rápido)
 python Lyra_Ollama/validador_cortical.py    # Hit Rate / MRR do RAG (baseline em LYRA_TECNICO.md)
 ```
+
+Os dois precisam dos serviços no ar (Qdrant, SurrealDB, Ollama, embed,
+cérebro). Não há testes unitários isolados nem CI.
 
 ## Dashboard de monitoramento
 
@@ -119,7 +149,11 @@ sucesso).
 Lyra_Ollama/               # backend — orquestrador, RAG, agentes, integrações
   cerebro_maestro.py         # orquestrador FastAPI :8000 — cascata, RAG, telemetria, todos os endpoints
   embed_service.py           # microserviço BGE-M3 :8001 (embedding 1024d + reranker)
-  lyra_tools.py               # ferramentas (function-calling): arquivo, web, mídia, memória, auto-extensão...
+  lyra_tools.py                # shim — re-exporta TOOLS_MAP/TOOLS_SCHEMA de tools/
+  tools/                       # ferramentas (function-calling) por domínio: fs, web, os, git, memória, visão...
+  llm_cascade.py               # cascata Groq → Gemini → Claude(CLI) → Ollama
+  rag_engine.py                # RAG híbrido (BM25 + denso + RRF + reranker)
+  surreal_client.py / session_manager.py   # SurrealDB e sessões de chat
   lyra_agent.py                # loop ReAct autônomo (POST /agente)
   lyra_agentes.py              # enxame de sub-agentes paralelos (POST /enxame)
   lyra_shadow_thoughts.py      # ciclo de sono NREM/REM/DEEP (dedup, grafo, compressão)
@@ -133,24 +167,33 @@ Lyra_Ollama/               # backend — orquestrador, RAG, agentes, integraçõ
   validador_cortical.py        # Hit Rate / MRR do RAG (baseline)
   calibrar_pesos_rag.py        # calibração de pesos do RRF
   test_smoke.py                # suite de smoke test (todos os endpoints)
-  routers/ · models/ · utils/  # FastAPI modularizado (routers por domínio, schemas Pydantic, helpers)
+  routers/ · models/ · utils/  # FastAPI modularizado (routers por domínio, schemas Pydantic, auth, segredos)
 Lyra_Core/                 # frontend, voz, sentidos, memória bruta
-  Front_end_Lyra/             # pywebview + Three.js (index.html, script.js, style.css, lyra_app.py) — produção
-  Front_end_Lyra_v3/          # SvelteKit + Tauri, próxima geração do frontend (em desenvolvimento)
+  Front_end_Lyra/             # v1 — pywebview + Three.js (produção)
+  Front_end_Lyra_v2/          # v2 — React + Vite, servido em /ui
+  Front_end_Lyra_v2_mockups/  # mockups HTML do v2
+  Front_end_Lyra_v3/          # v3 — SvelteKit + Tauri, servido em /ui-novo (Lyra 2.0)
+  Lyra_Desktop/               # casca Electron que carrega /ui
   audio_manager.py            # TTS (edge-tts Francisca) — pipeline pausado por decisão do usuário
   mic_engine.py               # STT (faster-whisper + Silero VAD)
   webcam.py                   # visão via webcam
   commands.py                 # comandos locais por voz
   google_auth/                # credentials.json / token.json (OAuth2, gerado localmente)
-  Sons/cache/                 # cache de áudio TTS + capturas de tela
+  Sons/cache/                 # runtime (fora do git): cache TTS, screenshots, uploads, imagens
   Memoria_Lyra/
     db_cortex/                  # dados do SurrealDB (não mexer manualmente)
-    Scripts_Ingestao/           # ingestão + vetorização dos datasets (pipeline_noturno.sh)
+    Scripts_Ingestao/           # ingestão + vetorização dos datasets (pipeline_noturno.sh; checkpoint_*.json fora do git)
     backups/                    # snapshots de segurança pré-migração
     Documentos/                  # documentação gerada (PDFs)
 bin/                        # binários locais + startup/*.bat + logs de boot
-Memorias Do Projeto/        # documentação canônica do projeto (NUCLEO/TECNICO/AGENTES_E_PLANOS/IDE)
+Memorias Do Projeto/        # documentação canônica do projeto (NUCLEO/TECNICO/AGENTES_E_PLANOS/IDE/ESTADO_ATUAL)
 ```
+
+**Fora do git (gerado em runtime):** `Lyra_Core/Sons/cache/`,
+`Lyra_Ollama/telemetria*.json*`, `Lyra_Ollama/lyra_tools_ext/` (ferramentas
+auto-criadas), checkpoints de ingestão, `.env`, credenciais OAuth,
+`qdrant_data/`, `db_cortex/`, `.claude/settings.local.json`. Os serviços
+recriam as pastas no start.
 
 ---
 
