@@ -40,3 +40,20 @@ target/
 
 # binário grande, baixa de novo se precisar (qdrant.exe)
 bin/qdrant.exe
+
+# estado de runtime (gerado pelos serviços, não é código)
+Lyra_Core/Sons/cache/
+Lyra_Ollama/telemetria.json
+Lyra_Ollama/telemetria_historico.jsonl
+Lyra_Ollama/lyra_tools_ext/
+Lyra_Core/Memoria_Lyra/Scripts_Ingestao/checkpoint_*.json
+.qdrant-initialized
+bin/backup_pip_freeze_*.txt
+
+# config local do Claude Code (permissões/PIDs da máquina)
+.claude/settings.local.json
+.claude/*.lock
+
+# screenshots em base64 (duplicam os .png) e capturas de debug
+Lyra_Core/Front_end_Lyra_v3/_screenshots/*.b64.txt
+Lyra_Core/Front_end_Lyra_v3/_screenshots/debug.png
