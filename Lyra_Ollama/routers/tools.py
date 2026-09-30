@@ -1,6 +1,6 @@
 """
 routers/tools.py — lista + toggle de ferramentas disponíveis
-(PLANEJAMENTO_LYRA2.0.md seção 9 item 5, "painel de MCP servers"). O backend
+(LYRA_NUCLEO.md §5.4, "painel de MCP servers"). O backend
 já expõe as tools via FastApiMCP em `/mcp` (protocolo MCP, não é JSON
 simples pra uma UI consumir direto) — este endpoint é uma view em REST
 simples do mesmo catálogo (`lyra_tools.TOOLS_SCHEMA`) pra alimentar um

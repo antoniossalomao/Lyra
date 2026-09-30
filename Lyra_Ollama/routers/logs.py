@@ -1,6 +1,6 @@
 """
-routers/logs.py — viewer de log dentro do app (PLANEJAMENTO_LYRA2.0.md seção
-9 item 6, parte "logs" — a parte "monitor" já foi resolvida por
+routers/logs.py — viewer de log dentro do app (LYRA_NUCLEO.md §5.4,
+parte "logs" — a parte "monitor" já foi resolvida por
 SystemRouter/health+metrics, consumidos pelo SystemPanel.svelte).
 
 Hoje `maestro.log`/`maestro.err` só existem como arquivo texto (ver

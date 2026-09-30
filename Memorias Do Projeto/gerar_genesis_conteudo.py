@@ -208,7 +208,7 @@ def build():
         "[MÉDIA] Migrar frontend Three.js para WebGPURenderer (r171+).",
         "[BAIXA] Separar validação do RAG por categoria (episodio vs conhecimento_geral) no validador_cortical.py.",
         "[BAIXA] Avaliar estado input-required do A2A para sub-agentes que precisam perguntar ao Antônio.",
-        "Tarefas manuais pendentes (ver instrucoes.md): Telegram bot, Google OAuth, Screenpipe, atualizar SurrealDB via winget, registrar MCP em ~/.claude/settings.json.",
+        "Tarefas manuais pendentes (ver README.md): Telegram bot, Google OAuth, Screenpipe, atualizar SurrealDB via winget, registrar MCP em ~/.claude/settings.json.",
         "Validar Voz Live ponta a ponta com microfone físico real.",
         "Confirmar visualmente sparkline histórico #t-hist-spark no painel lateral.",
     ]:
@@ -420,7 +420,7 @@ def build():
     d.table(
         ["Prioridade", "Item", "Notas"],
         [
-            ["ALTA", "Telegram bot (@BotFather + .env TELEGRAM_BOT_TOKEN)", "instrucoes.md item pendente"],
+            ["ALTA", "Telegram bot (@BotFather + .env TELEGRAM_BOT_TOKEN)", "README.md, integrações opcionais"],
             ["ALTA", "Google OAuth (Gmail + Calendar)", "lyra_google_workspace.py"],
             ["ALTA", "Registrar MCP: ~/.claude/settings.json → url http://127.0.0.1:8000/mcp", "Conecta Claude Code à Lyra"],
             ["MÉDIA", "npm install -g @screenpipe/cli", "Total Recall — OCR contínuo"],

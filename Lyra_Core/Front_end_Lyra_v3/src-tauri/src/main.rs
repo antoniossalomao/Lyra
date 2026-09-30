@@ -1,9 +1,9 @@
-// main.rs — lado nativo da casca Tauri "só assistente" (PLANEJAMENTO_LYRA2.0.md
-// seção 10). Implementa o contrato de `shell.ts` do frontend: get_secret,
+// main.rs — lado nativo da casca Tauri "só assistente" (LYRA_NUCLEO.md
+// §5.6). Implementa o contrato de `shell.ts` do frontend: get_secret,
 // set_setting, start_backend, open_ide.
 //
 // NÃO COMPILADO/TESTADO — toolchain Rust (cargo/rustc) não está instalado
-// na máquina onde isso foi escrito (ver PROGRESSAO_LYRAV2.md, veto de
+// na máquina onde isso foi escrito (ver LYRA_NUCLEO.md §5.8, veto de
 // download grande sem confirmação). Código escrito seguindo a API pública
 // conhecida do Tauri v2; precisa de `cargo check` real antes de confiar
 // nele — trate como rascunho revisável, não como testado.

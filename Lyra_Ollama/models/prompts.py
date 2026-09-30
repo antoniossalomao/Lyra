@@ -1,6 +1,6 @@
 """
 models/prompts.py — schemas Pydantic da biblioteca de prompts salvos.
-Ver PLANEJAMENTO_LYRA2.0.md — item novo (auditoria de paridade com Open WebUI,
+Ver LYRA_NUCLEO.md §5.4 — item novo (auditoria de paridade com Open WebUI,
 2026-08-12): prompts reutilizáveis, inseridos no composer com 1 clique.
 """
 from pydantic import BaseModel

@@ -1,6 +1,6 @@
 """
-utils/secrets.py — SecretRef (PLANEJAMENTO_LYRA2.0.md seção 9 item 9,
-inspirado no padrão do OpenClaw seção 3.5).
+utils/secrets.py — SecretRef (LYRA_NUCLEO.md §5.4,
+inspirado no padrão do OpenClaw, §5.1).
 
 Problema que resolve: hoje `config.py`/`.env` guardam chave de API em texto
 puro (`GROQ_API_KEY = os.environ.get(...)`) — funciona, mas não tem

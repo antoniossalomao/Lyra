@@ -54,6 +54,8 @@ bin/backup_pip_freeze_*.txt
 .claude/settings.local.json
 .claude/*.lock
 
-# screenshots em base64 (duplicam os .png) e capturas de debug
-Lyra_Core/Front_end_Lyra_v3/_screenshots/*.b64.txt
-Lyra_Core/Front_end_Lyra_v3/_screenshots/debug.png
+# capturas de verificação de UI
+Lyra_Core/Front_end_Lyra_v3/_screenshots/
+
+# schemas gerados pelo build do Tauri
+Lyra_Core/Front_end_Lyra_v3/src-tauri/gen/

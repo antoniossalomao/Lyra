@@ -1,6 +1,6 @@
 <script lang="ts">
-	// SystemPanel — monitor de sistema/logs (PLANEJAMENTO_LYRA2.0.md seção 9
-	// item 6). Só a parte "monitor" por enquanto — viewer de log de arquivo
+	// SystemPanel — monitor de sistema/logs (LYRA_NUCLEO.md §5.4).
+	// Só a parte "monitor" por enquanto — viewer de log de arquivo
 	// (maestro.log) fica pra depois, exige um endpoint novo de leitura de
 	// arquivo que ainda não existe no backend.
 	import { api } from '$lib/api';

@@ -1,7 +1,7 @@
 """
 utils/auth.py — hash de senha, JWT e a dependency `get_current_user`.
 
-Implementa o subset mínimo decidido em PLANEJAMENTO_LYRA2.0.md seção 5
+Implementa o subset mínimo decidido em LYRA_NUCLEO.md §5.2
 (inspirado no Open WebUI): 1 tabela `users`, JWT em cookie httpOnly, sem
 LDAP/OAuth/SCIM/revogação via Redis. Cada classe tem uma responsabilidade só
 — hash, token, leitura da tabela, dependency FastAPI — pra qualquer

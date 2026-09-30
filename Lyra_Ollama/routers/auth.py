@@ -1,7 +1,7 @@
 """
 routers/auth.py — setup inicial da conta admin, login e logout.
 
-Implementa o "Cenário A" decidido em PLANEJAMENTO_LYRA2.0.md seção 4/5:
+Implementa o "Cenário A" decidido em LYRA_NUCLEO.md §5.2:
 proteção de acesso por senha, single-user (1 conta admin), sem multi-tenant/
 OAuth/LDAP. JWT em cookie httpOnly (não localStorage — evita XSS roubar o
 token). Primeira tela do frontend consulta GET /auth/status: se

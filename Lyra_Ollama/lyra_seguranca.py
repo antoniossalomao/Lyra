@@ -71,7 +71,7 @@ def resetar_rate_limit(nome_tool: str) -> None:
 
 
 # ── Câmara de Eco Heurística (avaliação de risco pré-execução) ──────────────
-# Item do roadmap (LYRA_NUCLEO.md 4.4), implementado 02/07/2026. V1 é heurística
+# Item do roadmap (LYRA_TECNICO.md §3.4), implementado 02/07/2026. V1 é heurística
 # por padrões (regex/substring), sem chamada de LLM — mesmo estilo já usado em
 # criar_ferramenta() (varredura de padrões de risco) e no roteador de intenção
 # (_TOOL_KEYWORDS_RE). NÃO expor essas funções em TOOLS_MAP/TOOLS_SCHEMA — é

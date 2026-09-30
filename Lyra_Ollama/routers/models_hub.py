@@ -1,6 +1,6 @@
 """
-routers/models_hub.py — hub de modelos Ollama (PLANEJAMENTO_LYRA2.0.md
-seção 9 item 3): listar modelos instalados e puxar um novo com progresso.
+routers/models_hub.py — hub de modelos Ollama (LYRA_NUCLEO.md
+§5.4): listar modelos instalados e puxar um novo com progresso.
 
 Não existe API pública de busca no registry do Ollama documentada de forma
 confiável pra chamar daqui sem arriscar quebrar quando o formato mudar — o

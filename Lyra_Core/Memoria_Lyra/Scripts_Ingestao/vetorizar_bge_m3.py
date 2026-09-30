@@ -21,7 +21,7 @@ def log(msg=""):
 
 log(f"\n{'='*60}\nINICIO {time.strftime('%Y-%m-%d %H:%M:%S')}\n{'='*60}")
 
-import pyarrow  # precisa vir antes do torch — ver vetorizar_todos.py
+import pyarrow  # precisa vir antes do torch — ver LYRA_TECNICO.md §2
 log("pyarrow ok")
 
 import torch

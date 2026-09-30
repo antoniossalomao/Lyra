@@ -245,7 +245,7 @@ class ChatRouter:
             ferramentas = tools_habilitadas
 
         # Enxame de Especialistas (MoE roteado) — proposta formalizada em
-        # LYRA_TECNICO.md 10.9, implementada em 02/07/2026. Cada especialista
+        # LYRA_TECNICO.md §3.2, implementada em 02/07/2026. Cada especialista
         # tem categoria + trigger + ordem de andares. Adicionar um especialista
         # novo = uma entrada na lista (ver ESPECIALISTAS em cerebro_maestro.py),
         # não editar lógica de roteamento espalhada.

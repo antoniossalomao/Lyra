@@ -1,6 +1,6 @@
 <script lang="ts">
-	// ModelHubPanel — hub de modelos Ollama (PLANEJAMENTO_LYRA2.0.md seção 9
-	// item 3). Puxar modelo é download grande — por isso o fluxo exige
+	// ModelHubPanel — hub de modelos Ollama (LYRA_NUCLEO.md §5.4).
+	// Puxar modelo é download grande — por isso o fluxo exige
 	// confirmação explícita ANTES de chamar o backend (mesmo padrão da Câmara
 	// de Eco Heurística do próprio backend: nada de risco roda sem o usuário
 	// confirmar de propósito).

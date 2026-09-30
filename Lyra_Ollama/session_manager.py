@@ -341,8 +341,8 @@ class SessionManager:
         return {"ok": True}
 
     async def favorite_session(self, sessao_id: str, favorita: bool) -> dict:
-        """Marca/desmarca uma sessão como favorita (PLANEJAMENTO_LYRA2.0.md
-        seção 9 item 4). Campo `favorita` é aditivo — SurrealDB é schemaless,
+        """Marca/desmarca uma sessão como favorita (LYRA_NUCLEO.md
+        §5.4). Campo `favorita` é aditivo — SurrealDB é schemaless,
         sessões antigas sem o campo simplesmente respondem False quando lidas
         (ver SessionsRouter.sessoes_listar)."""
         try:

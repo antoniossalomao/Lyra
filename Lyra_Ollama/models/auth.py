@@ -1,6 +1,6 @@
 """
 models/auth.py — schemas Pydantic dos endpoints de autenticação.
-Ver PLANEJAMENTO_LYRA2.0.md seção 5 (proteção de acesso mínima, single-user).
+Ver LYRA_NUCLEO.md §5.2 (proteção de acesso mínima, single-user).
 """
 from pydantic import BaseModel
 

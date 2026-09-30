@@ -1,5 +1,5 @@
 // shell.ts — contrato fino entre o frontend Svelte e a casca nativa que o
-// hospeda (Theia/Electron OU Tauri/Rust). Ver PLANEJAMENTO_LYRA2.0.md §12.3:
+// hospeda (Theia/Electron OU Tauri/Rust). Ver LYRA_NUCLEO.md §5.6:
 // "o Svelte só chama a interface, nunca a implementação" — sem isso, cada
 // componente teria que saber em qual casca está rodando.
 //
@@ -25,7 +25,7 @@ export interface LyraShell {
 	startBackend(): Promise<void>;
 
 	/** Abre a IDE da Lyra (Theia) — botão da casca Tauri (decisão 2026-08-11,
-	 * ver PLANEJAMENTO_LYRA2.0.md §10). Se já estiver aberta, foca a janela.
+	 * ver LYRA_NUCLEO.md §5.6). Se já estiver aberta, foca a janela.
 	 * Casca browser não tem como abrir outro processo — lança erro. */
 	openIDE(): Promise<void>;
 }
@@ -85,7 +85,7 @@ class TheiaShell implements LyraShell {
  * automaticamente pelo runtime Tauri em toda janela (não precisa de query
  * param como o Theia). Chama os comandos Rust via `invoke` — implementação
  * do lado Rust em `src-tauri/src/main.rs` (ver seção 5 do
- * PLANEJAMENTO_LYRA2.0.md e PROGRESSAO_LYRAV2.md pra status: os comandos
+ * LYRA_NUCLEO.md §5.8 pra status: os comandos
  * Rust existem como código-fonte mas NÃO foram compilados/testados —
  * toolchain Rust não instalado nesta máquina).
  */

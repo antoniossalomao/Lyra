@@ -74,7 +74,7 @@ TABELAS = [
 
 # ─── MAPPERS ──────────────────────────────────────────────────────────────────
 # Schema padrão Lyra: { titulo, texto, fonte, categoria }
-# 'texto' é vetorizado pelo final.py — máx 3000 chars
+# 'texto' é vetorizado pelo vetorizar_bge_m3.py — máx 3000 chars
 
 def _m_wiki(d):
     t = (d.get("title") or "").strip()
@@ -542,7 +542,7 @@ async def main() -> None:
     print(f"║  Total registros : {total:>10,}                           ║")
     print(f"║  Tempo total     : {elapsed / 60:>10.1f} min                       ║")
     print("╠══════════════════════════════════════════════════════════╣")
-    print("║  Próximo:  python final.py  (vetoriza no Qdrant)        ║")
+    print("║  Próximo:  python vetorizar_bge_m3.py  (vetoriza)       ║")
     print("╚══════════════════════════════════════════════════════════╝")
     print()
 

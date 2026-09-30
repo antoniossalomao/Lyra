@@ -2,7 +2,7 @@
 routers/system.py — Endpoints de status/telemetria/saúde do sistema.
 
 Extraído de cerebro_maestro.py na reorganização OOP (Lyra 2.0, ver
-PLANEJAMENTO_LYRA2.0.md seção 6). Comportamento idêntico ao original —
+LYRA_NUCLEO.md §5.3). Comportamento idêntico ao original —
 só move código de lugar, não muda lógica nenhuma.
 """
 import asyncio

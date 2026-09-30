@@ -143,7 +143,7 @@
 		}
 	}
 
-	// Botão "abrir IDE" (decisão 2026-08-11, PLANEJAMENTO_LYRA2.0.md seção 10)
+	// Botão "abrir IDE" (decisão 2026-08-11, LYRA_NUCLEO.md §5.6)
 	// só faz sentido na casca Tauri — some das outras cascas de propósito.
 	async function abrirIDE() {
 		try {

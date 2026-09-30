@@ -132,7 +132,7 @@ if os.path.isdir(_PASTA_UI):
 # Frontend novo (SvelteKit, Lyra 2.0) — servido em paralelo ao /ui atual, sem
 # substituir nada. Same-origin (porta 8000) pra cookie de auth funcionar sem
 # mexer no CORS. Cutover pro /ui de verdade é decisão separada, só depois de
-# paridade de feature confirmada em uso real (ver PROGRESSAO_LYRAV2.md).
+# paridade de feature confirmada em uso real (ver LYRA_NUCLEO.md §5.7).
 _PASTA_UI_NOVO = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "Lyra_Core", "Front_end_Lyra_v3", "build")
 if os.path.isdir(_PASTA_UI_NOVO):
@@ -375,7 +375,7 @@ buscar_grafo_surreal = _rag.search_graph  # nome antigo usado pelo endpoint /gra
 
 def buscar_hibrido(query: str, top_k: int = 5, categoria: str = "",
                    peso_relevancia: float = 1.0, peso_recencia: float = 0.0):
-    """Wrapper de compatibilidade (calibrar_pesos_rag.py importa este nome)."""
+    """Wrapper de compatibilidade (validador_cortical.py importa este nome)."""
     return _rag.search(query, top_k=top_k, categoria=categoria,
                        peso_relevancia=peso_relevancia, peso_recencia=peso_recencia)
 
@@ -623,8 +623,8 @@ _TOOL_KEYWORDS_RE = re.compile(r"\b(" + "|".join(
     re.escape(k) for k in sorted(_TOOL_KEYWORDS, key=len, reverse=True)) + r")", re.IGNORECASE)
 
 
-# Enxame de Especialistas (MoE roteado) — proposta desenhada em LYRA_TECNICO.md
-# 10.9, formalizada aqui em 02/07/2026. Cada especialista declara categoria +
+# Enxame de Especialistas (MoE roteado) — ver LYRA_TECNICO.md
+# §3.2, formalizada aqui em 02/07/2026. Cada especialista declara categoria +
 # trigger (função que decide se casa com a mensagem) + ordem de andares da
 # cascata pra essa categoria. O roteador percorre a lista NA ORDEM e usa o
 # primeiro cujo trigger bater; "geral" tem trigger=None e funciona como
@@ -784,7 +784,7 @@ app.include_router(_auth_router.router)
 # NOTA: nenhuma rota existente ganhou Depends(get_current_user) ainda —
 # o frontend React atual não tem tela de login, gatear agora trancaria o
 # usuário fora do próprio app. Aplicar isso é trabalho da Fase 4 (frontend
-# SvelteKit com onboarding/login), ver PROGRESSAO_LYRAV2.md.
+# SvelteKit com onboarding/login), ver LYRA_NUCLEO.md §5.2.
 
 
 from routers.misc import MiscRouter

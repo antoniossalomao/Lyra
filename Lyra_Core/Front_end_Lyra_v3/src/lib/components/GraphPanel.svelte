@@ -1,5 +1,5 @@
 <script lang="ts">
-	// GraphPanel — visualização do grafo de memória (PLANEJAMENTO_LYRA2.0.md
+	// GraphPanel — visualização do grafo de memória (LYRA_NUCLEO.md §5.4,
 	// paridade v1/v2, "grafo 3D"). Implementado em 2D com Canvas nativo em vez
 	// da lib 3d-force-graph do frontend antigo — mesma decisão já tomada pro
 	// componente "esfera" (ver memória lyra_frontend_v2_plano: canvas 2D leve,

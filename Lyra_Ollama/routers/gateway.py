@@ -1,6 +1,6 @@
 """
 routers/gateway.py — WebSocket tipado (Lyra 2.0 Fase 3, inspirado no padrão
-Gateway do OpenClaw — ver PLANEJAMENTO_LYRA2.0.md seção 3.5/10).
+Gateway do OpenClaw — ver LYRA_NUCLEO.md §5.3).
 
 Camada ADITIVA: não substitui os endpoints REST existentes (removê-los
 quebraria o frontend React atual, que consome REST/SSE). Expõe um
@@ -11,7 +11,7 @@ persistente em vez de poll REST repetido.
 
 Só ações de LEITURA entraram nesta primeira rodada (status/stats/histórico/
 busca) — nada destrutivo (deletar sessão) nem o /chat (ainda dentro de
-cerebro_maestro.py, ver PROGRESSAO_LYRAV2.md pro motivo). Cada handler já
+cerebro_maestro.py, ver LYRA_NUCLEO.md §5.3 pro motivo). Cada handler já
 existe nos routers REST; este arquivo só reaproveita os métodos deles via
 um dict {action: callable} montado em cerebro_maestro.py — esta classe não
 precisa conhecer o resto do sistema, só sabe despachar.
